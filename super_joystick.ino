@@ -59,7 +59,7 @@ my_hid_report_t joystick;
 int mouse_mode = false;
 int32_t lastEnc = 0;
 int8_t lastLeds[] = {32, 32, 32, 32, 32, 32, 32, 32}; 
-bool has_key = false;
+int8_t key_count = 0;
 int8_t key_x = 28;
 int8_t key_y = 20;
 
@@ -307,13 +307,13 @@ void loop() {
 
     if(usb_hid.ready()) {
       usb_hid.mouseReport(MOUSE_ID, 0, 0, 0, 0, 0);
-    
-      if(has_key) {
-        usb_hid.keyboardRelease(KEYBOARD_ID);
-        has_key = false;
-      }
     }
-    
+    delay(10);
+
+    if(usb_hid.ready() && key_count) {    
+      usb_hid.keyboardRelease(KEYBOARD_ID);
+      key_count = 0;
+    }
     delay(500);
     
   } else if (bEnc) {
@@ -341,7 +341,7 @@ void loop() {
     int8_t mouse_x =  static_cast<int8_t>(R1X/1028);
     int8_t mouse_y = -static_cast<int8_t>(R1Y/1028);
     int8_t mouse_h =  static_cast<int8_t>(L1X/4096);
-    int8_t mouse_v = -static_cast<int8_t>(L1Y/4096);
+    int8_t mouse_v =  static_cast<int8_t>(L1Y/4096);
 
     if (mouse_x < 2 && mouse_x > -2) mouse_x = 0;
     if (mouse_y < 2 && mouse_y > -2) mouse_y = 0;   
@@ -368,37 +368,55 @@ void loop() {
     }
 
     uint8_t key_modifier = 0;
-    if(b2) {
-      key_modifier = key_modifier | HID_KEY_SHIFT_LEFT;
-    } else if (b1) {
-      key_modifier = key_modifier | HID_KEY_CONTROL_LEFT;
-    }
+    // if(rbutton4) {
+    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTSHIFT;
+    // }
+    // if (rbutton1) {
+    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTCTRL;
+    // }
+    // if (rbutton2) {
+    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTALT;
+    // }
+    // if (rbutton3) {
+    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTGUI;
+    // }
 
     if (usb_hid.ready()) {
+      int count = 0;
+      uint8_t keys[6] = { 0 }; // Be careful not to exceed the report limit of 6 keys
+      if (lbutton3) {
+        if(count < 6) keys[count++] = HID_KEY_ESCAPE;
+      }
+      if (rbutton4) {
+        if(count < 6) keys[count++] = HID_KEY_SHIFT_LEFT;
+      }
+      if (rbutton1) {
+        if(count < 6) keys[count++] = HID_KEY_CONTROL_LEFT;
+      }
+      if (rbutton2) {
+        if(count < 6) keys[count++] = HID_KEY_ALT_LEFT;
+      }
+      if (rbutton3) {
+        if(count < 6) keys[count++] = HID_KEY_GUI_LEFT;
+      }      
+      
       if (R2Y > 15000) {
-        Serial.println("HID_KEY_ARROW_UP");
-        uint8_t keys[6] = {HID_KEY_ARROW_UP};
-        usb_hid.keyboardReport(KEYBOARD_ID, key_modifier, keys);
-        has_key = true;
+        if(count < 6) keys[count++] = HID_KEY_ARROW_UP;
       } else if (R2X >  15000) {
-        Serial.println("HID_KEY_ARROW_RIGHT");
-        uint8_t keys[6] = {HID_KEY_ARROW_RIGHT};
-        usb_hid.keyboardReport(KEYBOARD_ID, key_modifier, keys);
-        has_key = true;
+        if(count < 6) keys[count++] = HID_KEY_ARROW_RIGHT;
       } else if (R2Y < -15000) {
-        Serial.println("HID_KEY_ARROW_DOWN");
-        uint8_t keys[6] = {HID_KEY_ARROW_DOWN};
-        usb_hid.keyboardReport(KEYBOARD_ID, key_modifier, keys);
-        has_key = true;        
+        if(count < 6) keys[count++] = HID_KEY_ARROW_DOWN;
       } else if (R2X < -15000) {
-        Serial.println("HID_KEY_ARROW_LEFT"); 
-        uint8_t keys[6] = {HID_KEY_ARROW_LEFT};
+        if(count < 6) keys[count++] = HID_KEY_ARROW_LEFT;
+      }
+
+      if(count > 0) {
         usb_hid.keyboardReport(KEYBOARD_ID, key_modifier, keys);
-        has_key = true;
-      } else {
+        key_count = count;
+      } else if (key_count > 0) {
         // send empty key report if previously has key pressed
-        if (has_key) usb_hid.keyboardRelease(KEYBOARD_ID);
-        has_key = false;
+        usb_hid.keyboardRelease(KEYBOARD_ID);
+        key_count = 0;
       }
     } else {
       Serial.println("Keyboard not ready!");
@@ -408,21 +426,28 @@ void loop() {
 
     if(display_installed) {
       display.fillRect(0, 0, 64, 128, SH110X_BLACK);
-      display.setCursor( 0,  0); display.print("Mouse:");    
-      display.setCursor( 0,  8); display.print("MX: "); display.setCursor( 24, 8); display.print(mouse_x, DEC);
-      display.setCursor( 0, 16); display.print("MY: "); display.setCursor( 24, 16); display.print(mouse_y, DEC);   
-      display.setCursor( 0, 24); display.print("MV: "); display.setCursor( 24, 24); display.print(mouse_v, DEC);
-      display.setCursor( 0, 32); display.print("MH: "); display.setCursor( 24, 32); display.print(mouse_h, DEC); 
-      
-      display.setCursor( 0, 48); display.print("Keyboard:"); 
-      display.setCursor( 0, 64); display.print("~!@#$%^&*."); 
-      display.setCursor( 0, 72); display.print("1234567890"); 
-      display.setCursor( 0, 80); display.print("ABCDEFGHIJ");
-      display.setCursor( 0, 88); display.print("KLMNOPQRST");
-      display.setCursor( 0, 96); display.print("UVWXYZ-+=_");
-      display.setCursor( 0, 104); display.print("{}[]()<>/\\");
-      display.setCursor( 0, 112); display.print(",.;:\`\'\""); 
-    // display.setCursor( 0, 120); display.print("EN: "); display.setCursor( 24, 88); display.print(Enc, DEC);
+      display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+      display.setCursor( 0,  0); display.print("Mouse:");
+      drawJoystick( 25, 17, 30, 30, R1X * 15 / 32768, -R1Y * 15 / 32768, b2);
+      drawBarCenter(40, 48, 7,  L1X * 32 / 32768, false);
+      drawBarCenter(56, 32, 7, -L1Y * 32 / 32768, true);
+      drawButton(28, 10, 3, lbutton4); 
+      drawButton(38, 10, 3, lbutton1);
+      drawButton(48, 10, 3, lbutton2);
+      display.setCursor( 0,  8); display.setTextColor(lbutton3 ? SH110X_BLACK : SH110X_WHITE, lbutton3 ? SH110X_WHITE : SH110X_BLACK); display.print("Esc");
+      display.setCursor( 0, 16); display.setTextColor(rbutton4 ? SH110X_BLACK : SH110X_WHITE, rbutton4 ? SH110X_WHITE : SH110X_BLACK); display.print("Sft");
+      display.setCursor( 0, 24); display.setTextColor(rbutton1 ? SH110X_BLACK : SH110X_WHITE, rbutton1 ? SH110X_WHITE : SH110X_BLACK); display.print("Ctr");
+      display.setCursor( 0, 32); display.setTextColor(rbutton2 ? SH110X_BLACK : SH110X_WHITE, rbutton2 ? SH110X_WHITE : SH110X_BLACK); display.print("Alt");
+      display.setCursor( 0, 40); display.setTextColor(rbutton3 ? SH110X_BLACK : SH110X_WHITE, rbutton3 ? SH110X_WHITE : SH110X_BLACK); display.print("GUI");
+      display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+      display.setCursor( 0, 64); display.print("Keyboard:"); 
+      display.setCursor( 0, 72); display.print("~!@#$%^&*."); 
+      display.setCursor( 0, 80); display.print("1234567890"); 
+      display.setCursor( 0, 88); display.print("ABCDEFGHIJ");
+      display.setCursor( 0, 96); display.print("KLMNOPQRST");
+      display.setCursor( 0, 104); display.print("UVWXYZ-+=_");
+      display.setCursor( 0, 112); display.print("{}[]()<>/\\");
+      display.setCursor( 0, 120); display.print(".,:;\`\'\""); 
     }
   } else { 
     joystick.l1x =  static_cast<int16_t>(L1X);
@@ -463,18 +488,19 @@ void loop() {
     }
 
     if(display_installed) {
+      display.setTextColor(SH110X_WHITE, SH110X_BLACK);
       display.fillRect(0, 0, 64, 128, SH110X_BLACK);
-      display.setCursor(0,0); display.print("Joystick:");        
-      display.setCursor( 0, 16); display.print("LX: "); display.setCursor( 24, 16); display.print(joystick.l1x, DEC);
-      display.setCursor( 0, 24); display.print("LY: "); display.setCursor( 24, 24); display.print(joystick.l1y, DEC);
-      display.setCursor( 0, 32); display.print("RX: "); display.setCursor( 24, 32); display.print(joystick.r1x, DEC);
-      display.setCursor( 0, 40); display.print("RY: "); display.setCursor( 24, 40); display.print(joystick.r1y, DEC);
-      display.setCursor( 0, 48); display.print("LZ: "); display.setCursor( 24, 48); display.print(joystick.l2x, DEC);
-      display.setCursor( 0, 56); display.print("LW: "); display.setCursor( 24, 56); display.print(joystick.l2y, DEC);
-      display.setCursor( 0, 64); display.print("RZ: "); display.setCursor( 24, 64); display.print(joystick.r2x, DEC);
-      display.setCursor( 0, 72); display.print("RW: "); display.setCursor( 24, 72); display.print(joystick.r2y, DEC);
-      display.setCursor( 0, 80); display.print("PO: "); display.setCursor( 24, 80); display.print(joystick.pot, DEC);
-      display.setCursor( 0, 88); display.print("EN: "); display.setCursor( 24, 88); display.print(Enc, DEC);     
+      display.setCursor(0,0); display.print("Joystick:");
+      drawJoystick( 1, 17, 30, 30, L1X * 15 / 32768, -L1Y * 15 / 32768, b1); 
+      drawJoystick(33, 17, 30, 30, R1X * 15 / 32768, -R1Y * 15 / 32768, b2); 
+      drawButton(12, 50, 4, lbutton1); drawButton(44, 50, 4, rbutton1);
+      drawButton( 4, 57, 4, lbutton4); drawButton(36, 57, 4, rbutton4);
+      drawButton(20, 57, 4, lbutton2); drawButton(52, 57, 4, rbutton2);
+      drawButton(12, 64, 4, lbutton3); drawButton(44, 64, 4, rbutton3);
+      drawJoystick( 1, 73, 30, 30, L2X * 15 / 32768, -L2Y * 15 / 32768, b3); 
+      drawJoystick(33, 73, 30, 30, R2X * 15 / 32768, -R2Y * 15 / 32768, b4); 
+      drawBarCenter(32, 105, 6, Pot * 32 / 32768, false);
+      display.setCursor( 0, 120); display.print("EN: "); display.setCursor( 24, 120); display.print(Enc, DEC);     
     }
   }    
 
@@ -489,6 +515,39 @@ void loop() {
   }
 
   yield();
+}
+
+void drawBarCenter(int32_t x, int32_t y, int32_t h, int32_t value, bool is_vert) {
+  if(is_vert) {
+    int32_t top    = std::min(y, y + value);
+    int32_t bottom = std::max(y, y + value); 
+    display.fillRect(x, top, h, bottom-top, SH110X_WHITE);
+  } else {
+    int32_t left  = std::min(x, x + value);
+    int32_t right = std::max(x, x + value); 
+    display.fillRect(left, y, right-left, h, SH110X_WHITE);
+  }
+}
+
+void drawButton(int32_t x, int32_t y, int32_t r, int32_t value_b) {
+  int32_t point_x = x + r / 2;
+  int32_t point_y = y + r / 2; 
+  if(value_b) {
+    display.fillCircle(point_x, point_y, r, SH110X_WHITE);
+  } else {
+    display.drawCircle(point_x, point_y, r, SH110X_WHITE);
+  }
+}
+
+void drawJoystick(int32_t x, int32_t y, int32_t w, int32_t h, int32_t value_x, int32_t value_y, int32_t value_b) {
+  int32_t point_x = x + w / 2 + value_x;
+  int32_t point_y = y + w / 2 + value_y; 
+  display.drawRect(x, y, w, h, SH110X_WHITE);
+  if(value_b) {
+    display.fillCircle(point_x, point_y, 2, SH110X_WHITE);
+  } else {
+    display.drawCircle(point_x, point_y, 2, SH110X_WHITE);
+  }
 }
 
 uint32_t ColorWheel(byte WheelPos) {
