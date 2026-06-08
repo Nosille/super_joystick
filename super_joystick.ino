@@ -532,12 +532,12 @@ void loop() {
 
 void drawBarCenter(const int32_t &x, const int32_t &y, const int32_t &h, const int32_t &value, bool is_vert) {
   if(is_vert) {
-    int32_t top    = std::min(y, y + value);
-    int32_t bottom = std::max(y, y + value); 
+    int32_t top    = std::min(y-1, y + value);
+    int32_t bottom = std::max(y+1, y + value); 
     display.fillRect(x, top, h, bottom-top, SH110X_WHITE);
   } else {
-    int32_t left  = std::min(x, x + value);
-    int32_t right = std::max(x, x + value); 
+    int32_t left  = std::min(x-1, x + value);
+    int32_t right = std::max(x+1, x + value); 
     display.fillRect(left, y, right-left, h, SH110X_WHITE);
   }
 }
