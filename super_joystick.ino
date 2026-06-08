@@ -54,14 +54,36 @@ uint8_t const desc_hid_report[] = {
 // USB HID object
 Adafruit_USBD_HID usb_hid;
 
+// Keyboard character list
+char const keyMatrix[8][10] = {
+  // bksp  lf   cr  esc  tab  home end ^home ^end del
+    {0x08,0x0A,0x0D,0x1B,0x09,0x02,0x03,0x01,0x04,0x7F},
+    { '~', '!', '@', '#', '$', '%', '^', '&', '*', '|'},
+    { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'}, 
+    { 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'},
+    { 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'},
+    { 'U', 'V', 'W', 'X', 'Y', 'Z', '-', '+', '=', '_'},
+    {'\{','\}', '[', ']', '(', ')', '<', '>', '/','\\'},
+    { ' ', '.', ',', ':', ';','\`','\'','\"',0xF8, '?'},
+};
+uint8_t const keyRows = sizeof(keyMatrix) / sizeof(keyMatrix[0]);
+uint8_t const keyCols = sizeof(keyMatrix[0]) / sizeof(keyMatrix[0][0]);
+uint8_t const ascii2hid[128][2] = { ASCII_TO_KEYCODE };
+
 // Global variables
 my_hid_report_t joystick;
 int mouse_mode = false;
 int32_t lastEnc = 0;
-int8_t lastLeds[] = {32, 32, 32, 32, 32, 32, 32, 32}; 
-int8_t key_count = 0;
-int8_t key_x = 28;
-int8_t key_y = 20;
+int8_t currentLeds[] = {32, 32, 32, 32, 32, 32, 32, 32}; // current brightness of leds, 0 to 255
+int8_t has_keys = 0;  // If keys were sent in last hid report
+int8_t key_x = 0;      // Current keyboard position
+int8_t key_y = 0;      // Current keyboard position
+uint8_t key_i = 0;     // Current key row
+uint8_t key_j = 0;     // Current key col
+int8_t mouse_x = 0;    // Mouse delta x
+int8_t mouse_y = 0;    // Mouse delta y
+int8_t mouse_h = 0;    // Mouse scroll horizontal
+int8_t mouse_v = 0;    // Mouse scroll vertical
 
 void setup() {
   // Start serial
@@ -242,15 +264,15 @@ void loop() {
   if (Pot < -32767) Pot = -32767; if (Pot > 32767) Pot = 32767;
   
   // pol buttons
-  bool lbutton1 = false; // up
-  bool lbutton2 = false; // right
-  bool lbutton3 = false; // down
-  bool lbutton4 = false; // left
+  bool lbutton1 = false; // left
+  bool lbutton2 = false; // up
+  bool lbutton3 = false; // right
+  bool lbutton4 = false; // down
 
-  bool rbutton1 = false; // up
-  bool rbutton2 = false; // right
-  bool rbutton3 = false; // down
-  bool rbutton4 = false; // left
+  bool rbutton1 = false; // left
+  bool rbutton2 = false; // up
+  bool rbutton3 = false; // right
+  bool rbutton4 = false; // down
   
   bool  b1  = !digitalRead(buttons[0]);
   bool  b2  = !digitalRead(buttons[1]);
@@ -262,16 +284,16 @@ void loop() {
   bool  b8  = !digitalRead(buttons[7]);
 
   if(arcade_left_installed) {
-    lbutton1 = !arcade_left.digitalRead(arcade_switchs[0]); // up
-    lbutton2 = !arcade_left.digitalRead(arcade_switchs[1]); // right
-    lbutton3 = !arcade_left.digitalRead(arcade_switchs[2]); // down
-    lbutton4 = !arcade_left.digitalRead(arcade_switchs[3]); // left
+    lbutton1 = !arcade_left.digitalRead(arcade_switchs[3]); // left
+    lbutton2 = !arcade_left.digitalRead(arcade_switchs[0]); // up
+    lbutton3 = !arcade_left.digitalRead(arcade_switchs[1]); // right
+    lbutton4 = !arcade_left.digitalRead(arcade_switchs[2]); // down
   }
   if(arcade_right_installed) {
-    rbutton1 = !arcade_right.digitalRead(arcade_switchs[0]); // up
-    rbutton2 = !arcade_right.digitalRead(arcade_switchs[1]); // right
-    rbutton3 = !arcade_right.digitalRead(arcade_switchs[2]); // down
-    rbutton4 = !arcade_right.digitalRead(arcade_switchs[3]); // left
+    rbutton1 = !arcade_right.digitalRead(arcade_switchs[3]); // left
+    rbutton2 = !arcade_right.digitalRead(arcade_switchs[0]); // up
+    rbutton3 = !arcade_right.digitalRead(arcade_switchs[1]); // right
+    rbutton4 = !arcade_right.digitalRead(arcade_switchs[2]); // down
   }
 
   // pol encoder
@@ -310,9 +332,9 @@ void loop() {
     }
     delay(10);
 
-    if(usb_hid.ready() && key_count) {    
+    if(usb_hid.ready() && has_keys) {    
       usb_hid.keyboardRelease(KEYBOARD_ID);
-      key_count = 0;
+      has_keys = false;
     }
     delay(500);
     
@@ -338,10 +360,10 @@ void loop() {
   // Update active report
   if (mouse_mode) {
     
-    int8_t mouse_x =  static_cast<int8_t>(R1X/1028);
-    int8_t mouse_y = -static_cast<int8_t>(R1Y/1028);
-    int8_t mouse_h =  static_cast<int8_t>(L1X/4096);
-    int8_t mouse_v =  static_cast<int8_t>(L1Y/4096);
+    mouse_x =  static_cast<int8_t>(R1X/1028);
+    mouse_y = -static_cast<int8_t>(R1Y/1028);
+    mouse_h =  static_cast<int8_t>(L1X/4096);
+    mouse_v =  static_cast<int8_t>(L1Y/4096);
 
     if (mouse_x < 2 && mouse_x > -2) mouse_x = 0;
     if (mouse_y < 2 && mouse_y > -2) mouse_y = 0;   
@@ -353,9 +375,9 @@ void loop() {
     if (mouse_h < -127) mouse_h = -127; if (mouse_h > 127) mouse_h = 127;
     if (mouse_v < -127) mouse_v = -127; if (mouse_v > 127) mouse_v = 127;    
     
-    uint8_t buttons  =  ( lbutton4 << 0) 
-                      | ( lbutton2 << 1) 
-                      | ( lbutton1 << 2) 
+    uint8_t buttons  =  ( b2 << 0) 
+                      | ( b4 << 1) 
+                      | ( b3 << 2) 
                       // | ( b3       << 3)
                       // | ( b4       << 4)
                       ;
@@ -367,38 +389,47 @@ void loop() {
       Serial.println("Mouse not ready!");
     }
 
-    uint8_t key_modifier = 0;
-    // if(rbutton4) {
-    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTSHIFT;
-    // }
-    // if (rbutton1) {
-    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTCTRL;
-    // }
-    // if (rbutton2) {
-    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTALT;
-    // }
-    // if (rbutton3) {
-    //   key_modifier = key_modifier | KEYBOARD_MODIFIER_LEFTGUI;
-    // }
+    // Caculate joystick position on keyboard and find key at that location
+    key_x = static_cast<int8_t>( L2X * (keyCols - 1) * 6 / 2 / 32767);  // characters are 5 pixels wide with a 1 pixel gap for 6 center to center
+    key_y = static_cast<int8_t>(-L2Y * (keyRows - 1) * 8 / 2 / 32767);  // characters are 7 pixels tall with a 1 pixel gap for 8 center to center
+    key_i = (key_y + (keyRows) * 8 / 2 ) / 8;
+    key_j = (key_x + (keyCols) * 6 / 2 ) / 6;
 
+    uint8_t modifier = 0;
     if (usb_hid.ready()) {
       int count = 0;
       uint8_t keys[6] = { 0 }; // Be careful not to exceed the report limit of 6 keys
-      if (lbutton3) {
-        if(count < 6) keys[count++] = HID_KEY_ESCAPE;
-      }
-      if (rbutton4) {
+      if (rbutton1) {
         if(count < 6) keys[count++] = HID_KEY_SHIFT_LEFT;
       }
-      if (rbutton1) {
+      if (rbutton2) {
         if(count < 6) keys[count++] = HID_KEY_CONTROL_LEFT;
       }
-      if (rbutton2) {
+      if (rbutton3) {
         if(count < 6) keys[count++] = HID_KEY_ALT_LEFT;
       }
-      if (rbutton3) {
+      if (rbutton4) {
+        if(count < 6) {
+          modifier      = ascii2hid[(uint8_t)keyMatrix[key_i][key_j]][0];
+          keys[count++] = ascii2hid[(uint8_t)keyMatrix[key_i][key_j]][1];
+        }
+      }
+      if (lbutton1) {
+        if(count < 6) keys[count++] = HID_KEY_HOME;
+      }
+      if (lbutton2) {
+        if(count < 6) keys[count++] = HID_KEY_ESCAPE;
+      }
+      if (lbutton3) {
+        if(count < 6) keys[count++] = HID_KEY_END;
+      }
+      if (lbutton4) {
+        if(count < 6) keys[count++] = HID_KEY_ENTER;
+      }
+
+      if (b1) {
         if(count < 6) keys[count++] = HID_KEY_GUI_LEFT;
-      }      
+      }
       
       if (R2Y > 15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_UP;
@@ -411,12 +442,12 @@ void loop() {
       }
 
       if(count > 0) {
-        usb_hid.keyboardReport(KEYBOARD_ID, key_modifier, keys);
-        key_count = count;
-      } else if (key_count > 0) {
+        usb_hid.keyboardReport(KEYBOARD_ID, modifier, keys);
+        has_keys = true;
+      } else if (has_keys) {
         // send empty key report if previously has key pressed
         usb_hid.keyboardRelease(KEYBOARD_ID);
-        key_count = 0;
+        has_keys = false;
       }
     } else {
       Serial.println("Keyboard not ready!");
@@ -425,29 +456,11 @@ void loop() {
     lastEnc = Enc;
 
     if(display_installed) {
-      display.fillRect(0, 0, 64, 128, SH110X_BLACK);
-      display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-      display.setCursor( 0,  0); display.print("Mouse:");
-      drawJoystick( 25, 17, 30, 30, R1X * 15 / 32768, -R1Y * 15 / 32768, b2);
-      drawBarCenter(40, 48, 7,  L1X * 32 / 32768, false);
-      drawBarCenter(56, 32, 7, -L1Y * 32 / 32768, true);
-      drawButton(28, 10, 3, lbutton4); 
-      drawButton(38, 10, 3, lbutton1);
-      drawButton(48, 10, 3, lbutton2);
-      display.setCursor( 0,  8); display.setTextColor(lbutton3 ? SH110X_BLACK : SH110X_WHITE, lbutton3 ? SH110X_WHITE : SH110X_BLACK); display.print("Esc");
-      display.setCursor( 0, 16); display.setTextColor(rbutton4 ? SH110X_BLACK : SH110X_WHITE, rbutton4 ? SH110X_WHITE : SH110X_BLACK); display.print("Sft");
-      display.setCursor( 0, 24); display.setTextColor(rbutton1 ? SH110X_BLACK : SH110X_WHITE, rbutton1 ? SH110X_WHITE : SH110X_BLACK); display.print("Ctr");
-      display.setCursor( 0, 32); display.setTextColor(rbutton2 ? SH110X_BLACK : SH110X_WHITE, rbutton2 ? SH110X_WHITE : SH110X_BLACK); display.print("Alt");
-      display.setCursor( 0, 40); display.setTextColor(rbutton3 ? SH110X_BLACK : SH110X_WHITE, rbutton3 ? SH110X_WHITE : SH110X_BLACK); display.print("GUI");
-      display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-      display.setCursor( 0, 64); display.print("Keyboard:"); 
-      display.setCursor( 0, 72); display.print("~!@#$%^&*."); 
-      display.setCursor( 0, 80); display.print("1234567890"); 
-      display.setCursor( 0, 88); display.print("ABCDEFGHIJ");
-      display.setCursor( 0, 96); display.print("KLMNOPQRST");
-      display.setCursor( 0, 104); display.print("UVWXYZ-+=_");
-      display.setCursor( 0, 112); display.print("{}[]()<>/\\");
-      display.setCursor( 0, 120); display.print(".,:;\`\'\""); 
+      display.fillRect(0, 0, 64, 128, SH110X_BLACK);  
+      // Mouse feedback in upper part of display
+      drawMouse(0, 0, R1X, R1Y, L1X, L1Y, b2, b3, b4, lbutton1, lbutton2, lbutton3, lbutton4, rbutton1, rbutton2, rbutton3);
+      // Draw keyboard matrix in lower display
+      drawKeyMatrix(2, 64);
     }
   } else { 
     joystick.l1x =  static_cast<int16_t>(L1X);
@@ -493,10 +506,10 @@ void loop() {
       display.setCursor(0,0); display.print("Joystick:");
       drawJoystick( 1, 17, 30, 30, L1X * 15 / 32768, -L1Y * 15 / 32768, b1); 
       drawJoystick(33, 17, 30, 30, R1X * 15 / 32768, -R1Y * 15 / 32768, b2); 
-      drawButton(12, 50, 4, lbutton1); drawButton(44, 50, 4, rbutton1);
-      drawButton( 4, 57, 4, lbutton4); drawButton(36, 57, 4, rbutton4);
-      drawButton(20, 57, 4, lbutton2); drawButton(52, 57, 4, rbutton2);
-      drawButton(12, 64, 4, lbutton3); drawButton(44, 64, 4, rbutton3);
+      drawButton( 4, 57, 4, lbutton1); drawButton(36, 57, 4, rbutton1);
+      drawButton(12, 50, 4, lbutton2); drawButton(44, 50, 4, rbutton2);
+      drawButton(20, 57, 4, lbutton3); drawButton(52, 57, 4, rbutton3);
+      drawButton(12, 64, 4, lbutton4); drawButton(44, 64, 4, rbutton4);
       drawJoystick( 1, 73, 30, 30, L2X * 15 / 32768, -L2Y * 15 / 32768, b3); 
       drawJoystick(33, 73, 30, 30, R2X * 15 / 32768, -R2Y * 15 / 32768, b4); 
       drawBarCenter(32, 105, 6, Pot * 32 / 32768, false);
@@ -517,7 +530,7 @@ void loop() {
   yield();
 }
 
-void drawBarCenter(int32_t x, int32_t y, int32_t h, int32_t value, bool is_vert) {
+void drawBarCenter(const int32_t &x, const int32_t &y, const int32_t &h, const int32_t &value, bool is_vert) {
   if(is_vert) {
     int32_t top    = std::min(y, y + value);
     int32_t bottom = std::max(y, y + value); 
@@ -529,7 +542,7 @@ void drawBarCenter(int32_t x, int32_t y, int32_t h, int32_t value, bool is_vert)
   }
 }
 
-void drawButton(int32_t x, int32_t y, int32_t r, int32_t value_b) {
+void drawButton(const int32_t &x, const int32_t &y, const int32_t &r, const bool &value_b) {
   int32_t point_x = x + r / 2;
   int32_t point_y = y + r / 2; 
   if(value_b) {
@@ -539,7 +552,8 @@ void drawButton(int32_t x, int32_t y, int32_t r, int32_t value_b) {
   }
 }
 
-void drawJoystick(int32_t x, int32_t y, int32_t w, int32_t h, int32_t value_x, int32_t value_y, int32_t value_b) {
+void drawJoystick(const int32_t &x, const int32_t &y, const int32_t &w, const int32_t &h, 
+                  const int32_t &value_x, const int32_t &value_y, const bool &value_b) {
   int32_t point_x = x + w / 2 + value_x;
   int32_t point_y = y + w / 2 + value_y; 
   display.drawRect(x, y, w, h, SH110X_WHITE);
@@ -547,6 +561,48 @@ void drawJoystick(int32_t x, int32_t y, int32_t w, int32_t h, int32_t value_x, i
     display.fillCircle(point_x, point_y, 2, SH110X_WHITE);
   } else {
     display.drawCircle(point_x, point_y, 2, SH110X_WHITE);
+  }
+}
+
+void drawMouse(const int32_t &x, const int32_t &y, const int32_t &value_x, const int32_t &value_y, const int32_t &value_h, const int32_t &value_v,
+               const bool &bleft, const bool &bright, const bool &bcenter, const bool &bhome, const bool &besc, const bool &bend, 
+               const bool &benter, const bool &bshift, const bool &bcontrol, const bool &balt) {
+
+  display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+  display.setCursor( x,  y); display.print("Mouse:");
+  drawJoystick( x+25, y+17, 30, 30, value_x * 15 / 32768, -value_y * 15 / 32768, false);
+  drawBarCenter(x+40, y+48, 7,  value_h * 32 / 32768, false);
+  drawBarCenter(x+56, y+32, 7, -value_v * 32 / 32768, true);
+  drawButton(x+28, y+10, 3, bleft); 
+  drawButton(x+38, y+10, 3, bright);
+  drawButton(x+48, y+10, 3, bcenter);
+  display.setCursor(x+0,y+ 8); display.setTextColor(bhome    ? SH110X_BLACK : SH110X_WHITE, bhome    ? SH110X_WHITE : SH110X_BLACK); display.print("Hom");
+  display.setCursor(x+0,y+16); display.setTextColor(besc     ? SH110X_BLACK : SH110X_WHITE, besc     ? SH110X_WHITE : SH110X_BLACK); display.print("Esc");
+  display.setCursor(x+0,y+24); display.setTextColor(bend     ? SH110X_BLACK : SH110X_WHITE, bend     ? SH110X_WHITE : SH110X_BLACK); display.print("End");
+  display.setCursor(x+0,y+32); display.setTextColor(benter   ? SH110X_BLACK : SH110X_WHITE, benter   ? SH110X_WHITE : SH110X_BLACK); display.print("Ent");            
+  display.setCursor(x+0,y+40); display.setTextColor(bshift   ? SH110X_BLACK : SH110X_WHITE, bshift   ? SH110X_WHITE : SH110X_BLACK); display.print("Sft");
+  display.setCursor(x+0,y+48); display.setTextColor(bcontrol ? SH110X_BLACK : SH110X_WHITE, bcontrol ? SH110X_WHITE : SH110X_BLACK); display.print("Ctr");
+  display.setCursor(x+0,y+56); display.setTextColor(balt     ? SH110X_BLACK : SH110X_WHITE, balt     ? SH110X_WHITE : SH110X_BLACK); display.print("Alt");
+  display.setTextColor(SH110X_WHITE, SH110X_BLACK);
+}
+
+void drawKeyMatrix(int32_t x, int32_t y) {
+  for(uint8_t i = 0; i < keyRows; i++){
+    display.setCursor( x, y + 8*i); 
+    for(uint8_t j = 0; j < keyCols; j++) {
+      // Highlight the appropriate key
+      if ((i == key_i) && (j ==  key_j)) display.setTextColor(SH110X_BLACK, SH110X_WHITE); 
+        if (keyMatrix[i][j] == 0x08) display.write('b');
+        else if (keyMatrix[i][j] == 0x0A) display.write('n');
+        else if (keyMatrix[i][j] == 0x0D) display.write('r');
+        else if (keyMatrix[i][j] == 0x02) display.write('h');
+        else if (keyMatrix[i][j] == 0x03) display.write('e');
+        else if (keyMatrix[i][j] == 0x01) display.write('H');
+        else if (keyMatrix[i][j] == 0x02) display.write('E');            
+        else if (keyMatrix[i][j] == 0x7F) display.write('d');
+        else display.write(keyMatrix[i][j]);
+      if ((i == key_i) && (j ==  key_j)) display.setTextColor(SH110X_WHITE, SH110X_BLACK);          
+    }
   }
 }
 
@@ -575,14 +631,14 @@ uint16_t get_report_callback(uint8_t report_id, hid_report_type_t report_type, u
   if(report_id == JOYSTICK_ID) {
     if (report_type == HID_REPORT_TYPE_FEATURE) {
         buffer[0] = report_id;
-        buffer[1] = lastLeds[0];
-        buffer[2] = lastLeds[1];
-        buffer[3] = lastLeds[2];
-        buffer[4] = lastLeds[3];
-        buffer[5] = lastLeds[4];
-        buffer[6] = lastLeds[5];
-        buffer[7] = lastLeds[6];
-        buffer[8] = lastLeds[7];
+        buffer[1] = currentLeds[0];
+        buffer[2] = currentLeds[1];
+        buffer[3] = currentLeds[2];
+        buffer[4] = currentLeds[3];
+        buffer[5] = currentLeds[4];
+        buffer[6] = currentLeds[5];
+        buffer[7] = currentLeds[6];
+        buffer[8] = currentLeds[7];
         return 9; // Return the number of bytes written
     }
   }
@@ -599,14 +655,14 @@ void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
   if(report_id == JOYSTICK_ID) {
     if (report_type == HID_REPORT_TYPE_OUTPUT) {
       // Buffer contains the LED/Rumble data from SDL
-      if(bufsize > 0) lastLeds[0] = buffer[0];
-      if(bufsize > 1) lastLeds[1] = buffer[1];
-      if(bufsize > 2) lastLeds[2] = buffer[2];
-      if(bufsize > 3) lastLeds[3] = buffer[3]; 
-      if(bufsize > 4) lastLeds[4] = buffer[4];
-      if(bufsize > 5) lastLeds[5] = buffer[5];
-      if(bufsize > 6) lastLeds[6] = buffer[6];
-      if(bufsize > 7) lastLeds[7] = buffer[7]; 
+      if(bufsize > 0) currentLeds[0] = buffer[0];
+      if(bufsize > 1) currentLeds[1] = buffer[1];
+      if(bufsize > 2) currentLeds[2] = buffer[2];
+      if(bufsize > 3) currentLeds[3] = buffer[3]; 
+      if(bufsize > 4) currentLeds[4] = buffer[4];
+      if(bufsize > 5) currentLeds[5] = buffer[5];
+      if(bufsize > 6) currentLeds[6] = buffer[6];
+      if(bufsize > 7) currentLeds[7] = buffer[7]; 
     }
   }
 
@@ -630,16 +686,16 @@ void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
 void setLeds() {
   // Setup arcade controllers
   if(arcade_left_installed) {
-    arcade_left.analogWrite(arcade_leds[0], lastLeds[0]);
-    arcade_left.analogWrite(arcade_leds[1], lastLeds[1]);
-    arcade_left.analogWrite(arcade_leds[2], lastLeds[2]);
-    arcade_left.analogWrite(arcade_leds[3], lastLeds[3]);
+    arcade_left.analogWrite(arcade_leds[0], currentLeds[0]);
+    arcade_left.analogWrite(arcade_leds[1], currentLeds[1]);
+    arcade_left.analogWrite(arcade_leds[2], currentLeds[2]);
+    arcade_left.analogWrite(arcade_leds[3], currentLeds[3]);
   }
 
   if(arcade_right_installed) {
-    arcade_right.analogWrite(arcade_leds[0], lastLeds[4]);
-    arcade_right.analogWrite(arcade_leds[1], lastLeds[5]);
-    arcade_right.analogWrite(arcade_leds[2], lastLeds[6]);
-    arcade_right.analogWrite(arcade_leds[3], lastLeds[7]);
+    arcade_right.analogWrite(arcade_leds[0], currentLeds[4]);
+    arcade_right.analogWrite(arcade_leds[1], currentLeds[5]);
+    arcade_right.analogWrite(arcade_leds[2], currentLeds[6]);
+    arcade_right.analogWrite(arcade_leds[3], currentLeds[7]);
   }
 }
