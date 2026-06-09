@@ -277,7 +277,6 @@ void setup() {
 }
 
 void loop() {
-  delay(20);
 
   // pol axes
   int32_t L1X = analogRead(axes[0]);
@@ -439,7 +438,7 @@ void loop() {
 
     // Determine keyboard matrix mode
     char const (*matrix)[keyCols];
-    if(rbutton1) matrix = keyMatrix_L2;
+    if(abs(Enc % 2) == 1) matrix = keyMatrix_L2;
     else matrix = keyMatrix_L1;
     
     // Keyboard report
@@ -454,16 +453,16 @@ void loop() {
       uint8_t modifier = 0;
       uint8_t keys[6] = { 0 }; // Be careful not to exceed the report limit of 6 keys
       
-      // The matrix has 2 modes distinquished by shift key.  
-      // Catch diff between shifted matrix select and regular shift.  
+      // Capture matrix key if button pressed 
       if (rbutton4) {
         modifier      = ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
         keys[count++] = ascii2hid[(uint8_t)matrix[key_i][key_j]][1];
-      } else if (rbutton1) {
-        keys[count++] = HID_KEY_SHIFT_LEFT;
       }
 
-      // other direct keys
+      // direct button keys
+      if (rbutton1) {
+        if(count < 6) keys[count++] = HID_KEY_SHIFT_LEFT;
+      }
       if (rbutton2) {
         if(count < 6) keys[count++] = HID_KEY_CONTROL_LEFT;
       }
@@ -576,6 +575,9 @@ void loop() {
 
   // display values
   if(display_installed) {
+    unsigned long timestamp = millis(); 
+    display.setCursor( 0, 120); display.print("DT: "); display.setCursor( 24, 120); display.print(timestamp-timestamp_last);
+    timestamp_last = timestamp;  
     display.display();
   }
 
@@ -583,10 +585,7 @@ void loop() {
     encoder_pixel.setPixelColor(0, ColorWheel(Enc & 0xFF));
     encoder_pixel.show();
   }
-
-  unsigned long timestamp = millis(); 
-  display.setCursor( 0, 120); display.print("DT: "); display.setCursor( 24, 120); display.print(timestamp-timestamp_last, DEC);
-  timestamp_last = timestamp;     
+   
   yield();
 }
 
@@ -672,6 +671,8 @@ void drawKeyMatrix(const int32_t &x, const int32_t &y, const char (*matrix)[keyC
         else if (matrix[i][j] == 0x18) display.write('8'); // F8
         else if (matrix[i][j] == 0x19) display.write('9'); // F9
         else if (matrix[i][j] == 0x1A) display.write('0'); // F10
+        else if (matrix[i][j] == 0x1C) display.write('1'); // F11
+        else if (matrix[i][j] == 0x1D) display.write('2'); // F12
         else if (matrix[i][j] == 0x0B) display.write(0xAE); // undo
         else if (matrix[i][j] == 0x0C) display.write(0xAF); // redo
 
