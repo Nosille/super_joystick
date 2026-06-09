@@ -55,19 +55,64 @@ uint8_t const desc_hid_report[] = {
 Adafruit_USBD_HID usb_hid;
 
 // Keyboard character list
-char const keyMatrix[8][10] = {
+uint8_t const keyRows = 6;
+uint8_t const keyCols = 10;
+char const keyMatrix_L1[keyRows][keyCols] = {
   // bksp  lf   cr  esc  tab  home end ^home ^end del
     {0x08,0x0A,0x0D,0x1B,0x09,0x02,0x03,0x01,0x04,0x7F},
-    { '~', '!', '@', '#', '$', '%', '^', '&', '*', '|'},
     { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'}, 
+    { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'},
+    { 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'},
+    { 'u', 'v', 'w', 'x', 'y', 'z', '-', '=', '[', ']'},
+    {0x0B,0X0C,'\`','\'', ';', ',', '.', '/','\\', ' '}
+  // Undo Redo
+};
+char const keyMatrix_L2[keyRows][keyCols] = {
+  //  F1   F2   F3   F4   F5   F6   F7   F8   F9   F10
+    {0x11,0X12,0X13,0X14,0X15,0X16,0X17,0X18,0X19,0X1A},
+    { '!', '@', '#', '$', '%', '^', '&', '*', '(', ')'},
     { 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'},
     { 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'},
-    { 'U', 'V', 'W', 'X', 'Y', 'Z', '-', '+', '=', '_'},
-    {'\{','\}', '[', ']', '(', ')', '<', '>', '/','\\'},
-    { ' ', '.', ',', ':', ';','\`','\'','\"',0xF8, '?'},
+    { 'U', 'V', 'W', 'X', 'Y', 'Z', '_', '+','\{','\}'},
+    {0x1C,0x1D, '~','\"', ':', '<', '>', '?', '|', ' '}
+  // F11  F12   
 };
-uint8_t const keyRows = sizeof(keyMatrix) / sizeof(keyMatrix[0]);
-uint8_t const keyCols = sizeof(keyMatrix[0]) / sizeof(keyMatrix[0][0]);
+// uint8_t const keyRows = 6;
+// uint8_t const keyCols = 5;
+// char const keyMatrix_L1[keyRows][keyCols] = {
+//     { 'a', 'b', 'c', 'd', 'e'},
+//     { 'f', 'g', 'h', 'i', 'j'},
+//     { 'k', 'l', 'm', 'n', 'o'},
+//     { 'p', 'q', 'r', 's', 't'},
+//     { 'u', 'v', 'w', 'x', 'y'},
+//     { 'z', ',', '.','\\', ' '}
+// };
+// char const keyMatrix_L2[keyRows][keyCols] = {
+//     { 'A', 'B', 'C', 'D', 'E'},
+//     { 'F', 'G', 'H', 'I', 'J'},
+//     { 'K', 'L', 'M', 'N', 'O'},
+//     { 'P', 'Q', 'R', 'S', 'T'},
+//     { 'U', 'V', 'W', 'X', 'Y'},
+//     { 'Z', '<', '>', '|', '_'},
+// };
+// char const keyMatrix_L3[keyRows][keyCols] = {
+//     { '1', '2', '3', '4', '5'},
+//     { '6', '7', '8', '9', '0'},
+//     { '!', '@', '#', '$', '%'},
+//     { '^', '&', '*', '(', ')'},
+//     { '/', '~', '?', '[', ']'},
+//     { ' ', ':', ';','\{','\}'}
+// };
+// char const keyMatrix_L3[keyRows][keyCols] = {
+//     {0x11,0X12,0X13,0X14,0X15},
+//     {0X16,0X17,0X18,0X19,0X1A},
+//     {0x1C,0x1D, '+', '-', '='},
+//     {0x0B,0x0C,'\`','\'','\"'},
+//     {0x09,0x02,0x03,0x01,0x04},
+//     {0x08,0x0A,0x0D,0x1B,0x7F}
+// }; 
+
+
 uint8_t const ascii2hid[128][2] = { ASCII_TO_KEYCODE };
 
 // Global variables
@@ -84,6 +129,7 @@ int8_t mouse_x = 0;    // Mouse delta x
 int8_t mouse_y = 0;    // Mouse delta y
 int8_t mouse_h = 0;    // Mouse scroll horizontal
 int8_t mouse_v = 0;    // Mouse scroll vertical
+unsigned long timestamp_last; 
 
 void setup() {
   // Start serial
@@ -218,6 +264,7 @@ void setup() {
     // Setup display to show joystick data
     display.setRotation(0);
     display.setTextSize(1);
+    display.cp437(true);
     display.setTextColor(SH110X_WHITE);
     display.setCursor(0,0);
     display.print("Starting!");
@@ -225,7 +272,7 @@ void setup() {
   }
 
   setLeds();
-
+  timestamp_last = millis();
   Serial.println("Setup complete!");
 }
 
@@ -358,61 +405,70 @@ void loop() {
   }
 
   // Update active report
+  // Mouse Mode
   if (mouse_mode) {
-    
-    mouse_x =  static_cast<int8_t>(R1X/1028);
-    mouse_y = -static_cast<int8_t>(R1Y/1028);
-    mouse_h =  static_cast<int8_t>(L1X/4096);
-    mouse_v =  static_cast<int8_t>(L1Y/4096);
-
-    if (mouse_x < 2 && mouse_x > -2) mouse_x = 0;
-    if (mouse_y < 2 && mouse_y > -2) mouse_y = 0;   
-    if (mouse_h < 1 && mouse_h > -1) mouse_h = 0;
-    if (mouse_v < 1 && mouse_v > -1) mouse_v = 0;       
-
-    if (mouse_x < -127) mouse_x = -127; if (mouse_x > 127) mouse_x = 127;
-    if (mouse_y < -127) mouse_y = -127; if (mouse_y > 127) mouse_y = 127;    
-    if (mouse_h < -127) mouse_h = -127; if (mouse_h > 127) mouse_h = 127;
-    if (mouse_v < -127) mouse_v = -127; if (mouse_v > 127) mouse_v = 127;    
-    
-    uint8_t buttons  =  ( b2 << 0) 
-                      | ( b4 << 1) 
-                      | ( b3 << 2) 
-                      // | ( b3       << 3)
-                      // | ( b4       << 4)
-                      ;
-
+    // Mouse report
     if (usb_hid.ready()) {
+      mouse_x =  static_cast<int8_t>(R1X/1028);
+      mouse_y = -static_cast<int8_t>(R1Y/1028);
+      mouse_h =  static_cast<int8_t>(R2X/4096);
+      mouse_v =  static_cast<int8_t>(R2Y/4096);
+
+      if (mouse_x < 2 && mouse_x > -2) mouse_x = 0;
+      if (mouse_y < 2 && mouse_y > -2) mouse_y = 0;   
+      if (mouse_h < 1 && mouse_h > -1) mouse_h = 0;
+      if (mouse_v < 1 && mouse_v > -1) mouse_v = 0;       
+
+      if (mouse_x < -127) mouse_x = -127; if (mouse_x > 127) mouse_x = 127;
+      if (mouse_y < -127) mouse_y = -127; if (mouse_y > 127) mouse_y = 127;    
+      if (mouse_h < -127) mouse_h = -127; if (mouse_h > 127) mouse_h = 127;
+      if (mouse_v < -127) mouse_v = -127; if (mouse_v > 127) mouse_v = 127;    
+      
+      uint8_t buttons  =  ( b2 << 0) 
+                        | ( b4 << 1) 
+                        | ( b3 << 2) 
+                        // | ( b3       << 3)
+                        // | ( b4       << 4)
+                        ;
+      // send mouse report
       usb_hid.mouseReport(MOUSE_ID, buttons, mouse_x, mouse_y, mouse_v, mouse_h);
       delay(10); // delay before trying keyboard report
     }  else {
       Serial.println("Mouse not ready!");
     }
 
-    // Caculate joystick position on keyboard and find key at that location
-    key_x = static_cast<int8_t>( L2X * (keyCols - 1) * 6 / 2 / 32767);  // characters are 5 pixels wide with a 1 pixel gap for 6 center to center
-    key_y = static_cast<int8_t>(-L2Y * (keyRows - 1) * 8 / 2 / 32767);  // characters are 7 pixels tall with a 1 pixel gap for 8 center to center
-    key_i = (key_y + (keyRows) * 8 / 2 ) / 8;
-    key_j = (key_x + (keyCols) * 6 / 2 ) / 6;
-
-    uint8_t modifier = 0;
+    // Determine keyboard matrix mode
+    char const (*matrix)[keyCols];
+    if(rbutton1) matrix = keyMatrix_L2;
+    else matrix = keyMatrix_L1;
+    
+    // Keyboard report
     if (usb_hid.ready()) {
+      // Caculate joystick position on keyMatrix
+      key_x = static_cast<int8_t>( L1X * (keyCols - 1) * 6 / 2 / 32767);  // characters are 5 pixels wide with a 1 pixel gap for 6 center to center
+      key_y = static_cast<int8_t>(-L1Y * (keyRows - 1) * 8 / 2 / 32767);  // characters are 7 pixels tall with a 1 pixel gap for 8 center to center
+      key_i = (key_y + (keyRows) * 8 / 2 ) / 8;
+      key_j = (key_x + (keyCols) * 6 / 2 ) / 6;
+
       int count = 0;
+      uint8_t modifier = 0;
       uint8_t keys[6] = { 0 }; // Be careful not to exceed the report limit of 6 keys
-      if (rbutton1) {
-        if(count < 6) keys[count++] = HID_KEY_SHIFT_LEFT;
+      
+      // The matrix has 2 modes distinquished by shift key.  
+      // Catch diff between shifted matrix select and regular shift.  
+      if (rbutton4) {
+        modifier      = ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
+        keys[count++] = ascii2hid[(uint8_t)matrix[key_i][key_j]][1];
+      } else if (rbutton1) {
+        keys[count++] = HID_KEY_SHIFT_LEFT;
       }
+
+      // other direct keys
       if (rbutton2) {
         if(count < 6) keys[count++] = HID_KEY_CONTROL_LEFT;
       }
       if (rbutton3) {
         if(count < 6) keys[count++] = HID_KEY_ALT_LEFT;
-      }
-      if (rbutton4) {
-        if(count < 6) {
-          modifier      = ascii2hid[(uint8_t)keyMatrix[key_i][key_j]][0];
-          keys[count++] = ascii2hid[(uint8_t)keyMatrix[key_i][key_j]][1];
-        }
       }
       if (lbutton1) {
         if(count < 6) keys[count++] = HID_KEY_HOME;
@@ -426,21 +482,20 @@ void loop() {
       if (lbutton4) {
         if(count < 6) keys[count++] = HID_KEY_ENTER;
       }
-
-      if (b1) {
-        if(count < 6) keys[count++] = HID_KEY_GUI_LEFT;
-      }
-      
-      if (R2Y > 15000) {
+      // if (b1) {
+      //   if(count < 6) keys[count++] = HID_KEY_GUI_LEFT;
+      // }
+      if (L2Y > 15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_UP;
-      } else if (R2X >  15000) {
+      } else if (L2X >  15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_RIGHT;
-      } else if (R2Y < -15000) {
+      } else if (L2Y < -15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_DOWN;
-      } else if (R2X < -15000) {
+      } else if (L2X < -15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_LEFT;
       }
 
+      // Send keyboard report
       if(count > 0) {
         usb_hid.keyboardReport(KEYBOARD_ID, modifier, keys);
         has_keys = true;
@@ -458,10 +513,11 @@ void loop() {
     if(display_installed) {
       display.fillRect(0, 0, 64, 128, SH110X_BLACK);  
       // Mouse feedback in upper part of display
-      drawMouse(0, 0, R1X, R1Y, L1X, L1Y, b2, b3, b4, lbutton1, lbutton2, lbutton3, lbutton4, rbutton1, rbutton2, rbutton3);
+      drawMouse(0, 0, R1X, R1Y, R2X, R2Y, b2, b3, b4, lbutton1, lbutton2, lbutton3, lbutton4, rbutton1, rbutton2, rbutton3);
       // Draw keyboard matrix in lower display
-      drawKeyMatrix(2, 64);
+      drawKeyMatrix(2, 72, matrix);
     }
+  // Keyboard mode
   } else { 
     joystick.l1x =  static_cast<int16_t>(L1X);
     joystick.l1y = -static_cast<int16_t>(L1Y);
@@ -494,6 +550,7 @@ void loop() {
 
     lastEnc = Enc;
 
+    // Send joystick report
     if (usb_hid.ready()) {
       usb_hid.sendReport(JOYSTICK_ID, &joystick, sizeof(joystick));  
     } else {
@@ -513,7 +570,7 @@ void loop() {
       drawJoystick( 1, 73, 30, 30, L2X * 15 / 32768, -L2Y * 15 / 32768, b3); 
       drawJoystick(33, 73, 30, 30, R2X * 15 / 32768, -R2Y * 15 / 32768, b4); 
       drawBarCenter(32, 105, 6, Pot * 32 / 32768, false);
-      display.setCursor( 0, 120); display.print("EN: "); display.setCursor( 24, 120); display.print(Enc, DEC);     
+      display.setCursor( 0, 112); display.print("EN: "); display.setCursor( 24, 112); display.print(Enc, DEC);     
     }
   }    
 
@@ -527,6 +584,9 @@ void loop() {
     encoder_pixel.show();
   }
 
+  unsigned long timestamp = millis(); 
+  display.setCursor( 0, 120); display.print("DT: "); display.setCursor( 24, 120); display.print(timestamp-timestamp_last, DEC);
+  timestamp_last = timestamp;     
   yield();
 }
 
@@ -586,21 +646,36 @@ void drawMouse(const int32_t &x, const int32_t &y, const int32_t &value_x, const
   display.setTextColor(SH110X_WHITE, SH110X_BLACK);
 }
 
-void drawKeyMatrix(int32_t x, int32_t y) {
+void drawKeyMatrix(const int32_t &x, const int32_t &y, const char (*matrix)[keyCols]) {
   for(uint8_t i = 0; i < keyRows; i++){
     display.setCursor( x, y + 8*i); 
     for(uint8_t j = 0; j < keyCols; j++) {
       // Highlight the appropriate key
       if ((i == key_i) && (j ==  key_j)) display.setTextColor(SH110X_BLACK, SH110X_WHITE); 
-        if (keyMatrix[i][j] == 0x08) display.write('b');
-        else if (keyMatrix[i][j] == 0x0A) display.write('n');
-        else if (keyMatrix[i][j] == 0x0D) display.write('r');
-        else if (keyMatrix[i][j] == 0x02) display.write('h');
-        else if (keyMatrix[i][j] == 0x03) display.write('e');
-        else if (keyMatrix[i][j] == 0x01) display.write('H');
-        else if (keyMatrix[i][j] == 0x02) display.write('E');            
-        else if (keyMatrix[i][j] == 0x7F) display.write('d');
-        else display.write(keyMatrix[i][j]);
+        if (     matrix[i][j] == 0x08) display.write(0x11); // backspace
+        else if (matrix[i][j] == 0x09) display.write(0x09); // tab
+        else if (matrix[i][j] == 0x0A) display.write(0xD9); // line feed
+        else if (matrix[i][j] == 0x0D) display.write(0x14); // carriage return
+        else if (matrix[i][j] == 0x1B) display.write(0x13); // escape
+        else if (matrix[i][j] == 0x01) display.write(0x18); // start of file
+        else if (matrix[i][j] == 0x02) display.write(0x1B); // home
+        else if (matrix[i][j] == 0x03) display.write(0x1A); // end
+        else if (matrix[i][j] == 0x04) display.write(0x19); // end of file
+        else if (matrix[i][j] == 0x7F) display.write(0x10); // delete
+        else if (matrix[i][j] == 0x11) display.write('1'); // F1
+        else if (matrix[i][j] == 0x12) display.write('2'); // F2
+        else if (matrix[i][j] == 0x13) display.write('3'); // F3
+        else if (matrix[i][j] == 0x14) display.write('4'); // F4
+        else if (matrix[i][j] == 0x15) display.write('5'); // F5
+        else if (matrix[i][j] == 0x16) display.write('6'); // F6
+        else if (matrix[i][j] == 0x17) display.write('7'); // F7
+        else if (matrix[i][j] == 0x18) display.write('8'); // F8
+        else if (matrix[i][j] == 0x19) display.write('9'); // F9
+        else if (matrix[i][j] == 0x1A) display.write('0'); // F10
+        else if (matrix[i][j] == 0x0B) display.write(0xAE); // undo
+        else if (matrix[i][j] == 0x0C) display.write(0xAF); // redo
+
+        else display.write(matrix[i][j]);
       if ((i == key_i) && (j ==  key_j)) display.setTextColor(SH110X_WHITE, SH110X_BLACK);          
     }
   }
@@ -699,3 +774,4 @@ void setLeds() {
     arcade_right.analogWrite(arcade_leds[3], currentLeds[7]);
   }
 }
+

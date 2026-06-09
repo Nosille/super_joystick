@@ -26,25 +26,25 @@
     {0, HID_KEY_BACKSPACE     }, /* 0x08 Backspace */ \
     {0, HID_KEY_TAB           }, /* 0x09 Tab       */ \
     {2, HID_KEY_ENTER         }, /* 0x0A Line Feed */ \
-    {0, 0                     }, /* 0x0B           */ \
-    {0, 0                     }, /* 0x0C           */ \
+    {1, HID_KEY_Z             }, /* 0x0B           */ \
+    {1, HID_KEY_Y             }, /* 0x0C           */ \
     {0, HID_KEY_ENTER         }, /* 0x0D CR        */ \
     {0, 0                     }, /* 0x0E           */ \
     {0, 0                     }, /* 0x0F           */ \
     {0, 0                     }, /* 0x10           */ \
-    {0, 0                     }, /* 0x11           */ \
-    {0, 0                     }, /* 0x12           */ \
-    {0, 0                     }, /* 0x13           */ \
-    {0, 0                     }, /* 0x14           */ \
-    {0, 0                     }, /* 0x15           */ \
-    {0, 0                     }, /* 0x16           */ \
-    {0, 0                     }, /* 0x17           */ \
-    {0, 0                     }, /* 0x18           */ \
-    {0, 0                     }, /* 0x19           */ \
-    {0, 0                     }, /* 0x1A           */ \
+    {0, HID_KEY_F1            }, /* 0x11           */ \
+    {0, HID_KEY_F2            }, /* 0x12           */ \
+    {0, HID_KEY_F3            }, /* 0x13           */ \
+    {0, HID_KEY_F4            }, /* 0x14           */ \
+    {0, HID_KEY_F5            }, /* 0x15           */ \
+    {0, HID_KEY_F6            }, /* 0x16           */ \
+    {0, HID_KEY_F7            }, /* 0x17           */ \
+    {0, HID_KEY_F8            }, /* 0x18           */ \
+    {0, HID_KEY_F9            }, /* 0x19           */ \
+    {0, HID_KEY_F10           }, /* 0x1A           */ \
     {0, HID_KEY_ESCAPE        }, /* 0x1B Escape    */ \
-    {0, 0                     }, /* 0x1C           */ \
-    {0, 0                     }, /* 0x1D           */ \
+    {0, HID_KEY_F11           }, /* 0x1C           */ \
+    {0, HID_KEY_F12           }, /* 0x1D           */ \
     {0, 0                     }, /* 0x1E           */ \
     {0, 0                     }, /* 0x1F           */ \
                                                       \
@@ -145,7 +145,8 @@
     {2, HID_KEY_BACKSLASH     }, /* 0x7C |         */ \
     {2, HID_KEY_BRACKET_RIGHT }, /* 0x7D }         */ \
     {2, HID_KEY_GRAVE         }, /* 0x7E ~         */ \
-    {0, HID_KEY_DELETE        }  /* 0x7F Delete    */ \
+    {0, HID_KEY_DELETE        }  /* 0x7F Delete    */ \           
+
 
 /*--------------------------------------------------------------------
  * KEYCODE to Ascii Conversion
