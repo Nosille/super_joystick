@@ -7,9 +7,12 @@
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
 
+#include "sketches.h"
 #include "hid_mouse_description.h"
 #include "hid_joystick_description.h"
 #include "hid_keyboard_description.h"
+
+#define QUEUE_SIZE 1
 
 // I2C_ADDR's
 #define SH1107_ADDR   0x3C // Address 0x3C default
@@ -23,7 +26,7 @@
 #define KEYBOARD_ID   0X03
 
 // Pins
-static const uint8_t axes[] = {18, 17, 16, 15, 13, 12, 11, 10, 14};
+static const uint8_t axes[] = {18, 17, 13, 12, 16, 15, 11, 10, 14};
 static const uint8_t buttons[] = {9, 6, 8, 5, 35, 37, 38, 39};
 static const uint8_t axes_size = sizeof(axes) / sizeof(axes[0]);
 static const uint8_t buttons_size = sizeof(buttons) / sizeof(buttons[0]);
@@ -111,13 +114,17 @@ char const keyMatrix_L2[keyRows][keyCols] = {
 //     {0x09,0x02,0x03,0x01,0x04},
 //     {0x08,0x0A,0x0D,0x1B,0x7F}
 // }; 
-
-
 uint8_t const ascii2hid[128][2] = { ASCII_TO_KEYCODE };
+
+// Queues
+QueueHandle_t queueAxes = NULL;
+QueueHandle_t queueButtons = NULL;
 
 // Global variables
 my_hid_report_t joystick;
-int mouse_mode = false;
+DisplayJoystick displayJoystick(&display);
+DisplayKeyboard displayKeyboard(&display);
+int keyboard_mode = false;
 int32_t lastEnc = 0;
 int8_t currentLeds[] = {32, 32, 32, 32, 32, 32, 32, 32}; // current brightness of leds, 0 to 255
 int8_t has_keys = 0;  // If keys were sent in last hid report
@@ -125,16 +132,175 @@ int8_t key_x = 0;      // Current keyboard position
 int8_t key_y = 0;      // Current keyboard position
 uint8_t key_i = 0;     // Current key row
 uint8_t key_j = 0;     // Current key col
-int8_t mouse_x = 0;    // Mouse delta x
-int8_t mouse_y = 0;    // Mouse delta y
-int8_t mouse_h = 0;    // Mouse scroll horizontal
-int8_t mouse_v = 0;    // Mouse scroll vertical
+// int8_t mouse_x = 0;    // Mouse delta x
+// int8_t mouse_y = 0;    // Mouse delta y
+// int8_t mouse_h = 0;    // Mouse scroll horizontal
+// int8_t mouse_v = 0;    // Mouse scroll vertical
 unsigned long timestamp_last; 
+
+// Tasks
+void taskReadAxes(void *parameter) {
+  for (;;) {
+    // unsigned long begin = millis();
+
+    int32_t a[10] = {0};
+    a[0] = analogRead(axes[0]);  // a[0]
+    a[1] = analogRead(axes[1]);  // a[1]
+    a[2] = analogRead(axes[2]);  // R1X
+    a[3] = analogRead(axes[3]);  // R1Y
+    a[4] = analogRead(axes[4]);  // a[4]
+    a[5] = analogRead(axes[5]);  // a[5]
+    a[6] = analogRead(axes[6]);  // R2X
+    a[7] = analogRead(axes[7]);  // R2Y
+    a[8] = analogRead(axes[8]);  // Pot
+
+    a[0]  = (a[0] - 2048) * 16.0;
+    a[1]  = (a[1] - 2048) * 16.0;
+    a[2]  = (a[2] - 2048) * 16.0;
+    a[3]  = (a[3] - 2048) * 16.0;
+    a[4]  = (a[4] - 2048) * 16.0;
+    a[5]  = (a[5] - 2048) * 16.0;
+    a[6]  = (a[6] - 2048) * 16.0;
+    a[7]  = (a[7] - 2048) * 16.0;
+    a[8]  = (a[8] - 2048) * 16.0;
+
+    if (a[0] < -32767) a[0] = -32767; if (a[0] > 32767) a[0] = 32767;
+    if (a[1] < -32767) a[1] = -32767; if (a[1] > 32767) a[1] = 32767;
+    if (a[2] < -32767) a[2] = -32767; if (a[2] > 32767) a[2] = 32767;
+    if (a[3] < -32767) a[3] = -32767; if (a[3] > 32767) a[3] = 32767;
+    if (a[4] < -32767) a[4] = -32767; if (a[4] > 32767) a[4] = 32767;
+    if (a[5] < -32767) a[5] = -32767; if (a[5] > 32767) a[5] = 32767;
+    if (a[6] < -32767) a[6] = -32767; if (a[6] > 32767) a[6] = 32767;
+    if (a[7] < -32767) a[7] = -32767; if (a[7] > 32767) a[7] = 32767;
+    if (a[8] < -32767) a[8] = -32767; if (a[8] > 32767) a[8] = 32767;
+
+    // UBaseType_t free_space = uxQueueSpacesAvailable(queueAxes);
+    // UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
+    // Serial.print("taskAxes: Free space in queue: "); Serial.print(free_space); 
+    // Serial.print(", Stack high water mark free: "); Serial.println(stack_high_water_mark);
+
+    xQueueOverwrite(queueAxes, &a);
+
+    // unsigned long end = millis();
+    // Serial.print("  Time: "); Serial.println(end - begin);
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms
+
+  }
+}
+
+void taskReadButtons(void *parameter) {
+  for (;;) {
+    unsigned long begin = millis();
+    
+    bool b[17] = {false};
+    if(arcade_left_installed) {
+      b[0] = !arcade_left.digitalRead(arcade_switchs[3]); // left
+      b[1] = !arcade_left.digitalRead(arcade_switchs[0]); // up
+      b[2] = !arcade_left.digitalRead(arcade_switchs[1]); // right
+      b[3] = !arcade_left.digitalRead(arcade_switchs[2]); // down
+    }
+    if(arcade_right_installed) {
+      b[4] = !arcade_right.digitalRead(arcade_switchs[3]); // left
+      b[5] = !arcade_right.digitalRead(arcade_switchs[0]); // up
+      b[6] = !arcade_right.digitalRead(arcade_switchs[1]); // right
+      b[7] = !arcade_right.digitalRead(arcade_switchs[2]); // down
+    }
+    b[8]  = !digitalRead(buttons[0]);
+    b[9]  = !digitalRead(buttons[1]);
+    b[10] = !digitalRead(buttons[2]);
+    b[11] = !digitalRead(buttons[3]);
+    b[12] = !digitalRead(buttons[4]);
+    b[13] = !digitalRead(buttons[5]);
+    b[14] = !digitalRead(buttons[6]);
+    b[15] = !digitalRead(buttons[7]);
+
+    if (encoder_installed) {
+      b[16] = !encoder.digitalRead(encoder_switch);   
+    }
+
+    UBaseType_t free_space = uxQueueSpacesAvailable(queueButtons);
+    UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
+    Serial.print("taskButtons: Free space in queue: "); Serial.print(free_space); 
+    Serial.print(", Stack high water mark free: "); Serial.println(stack_high_water_mark);
+
+    xQueueOverwrite(queueButtons, &b);
+    unsigned long end = millis();
+    Serial.print("  Time: "); Serial.println(end - begin);
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms
+  }
+}
+
+void setLeds() {
+  // Setup arcade controllers
+  if(arcade_left_installed) {
+    arcade_left.analogWrite(arcade_leds[0], currentLeds[0]);
+    arcade_left.analogWrite(arcade_leds[1], currentLeds[1]);
+    arcade_left.analogWrite(arcade_leds[2], currentLeds[2]);
+    arcade_left.analogWrite(arcade_leds[3], currentLeds[3]);
+  }
+
+  if(arcade_right_installed) {
+    arcade_right.analogWrite(arcade_leds[0], currentLeds[4]);
+    arcade_right.analogWrite(arcade_leds[1], currentLeds[5]);
+    arcade_right.analogWrite(arcade_leds[2], currentLeds[6]);
+    arcade_right.analogWrite(arcade_leds[3], currentLeds[7]);
+  }
+}
+
+// Invoked when received GET_REPORT control request
+// Application must fill buffer report's content and return its length.
+// Return zero will cause the stack to STALL request
+uint16_t get_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen) {
+  // not used in this example
+  (void) buffer;
+  (void) reqlen;
+
+  // Populate the buffer with led data
+  if(report_id == JOYSTICK_ID) {
+    if (report_type == HID_REPORT_TYPE_FEATURE) {
+        buffer[0] = report_id;
+        buffer[1] = currentLeds[0];
+        buffer[2] = currentLeds[1];
+        buffer[3] = currentLeds[2];
+        buffer[4] = currentLeds[3];
+        buffer[5] = currentLeds[4];
+        buffer[6] = currentLeds[5];
+        buffer[7] = currentLeds[6];
+        buffer[8] = currentLeds[7];
+        return 9; // Return the number of bytes written
+    }
+  }
+  return 0; // Unsupported report
+}
+
+// Invoked when received SET_REPORT control request or
+// received data on OUT endpoint ( Report ID = 0, Type = 0 )
+void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
+  // This example doesn't use report ID
+  (void) report_id;
+  
+  // Check if it is the correct report and if SDL sent output data
+  if(report_id == JOYSTICK_ID) {
+    if (report_type == HID_REPORT_TYPE_OUTPUT) {
+      // Buffer contains the LED/Rumble data from SDL
+      if(bufsize > 0) currentLeds[0] = buffer[0];
+      if(bufsize > 1) currentLeds[1] = buffer[1];
+      if(bufsize > 2) currentLeds[2] = buffer[2];
+      if(bufsize > 3) currentLeds[3] = buffer[3]; 
+      if(bufsize > 4) currentLeds[4] = buffer[4];
+      if(bufsize > 5) currentLeds[5] = buffer[5];
+      if(bufsize > 6) currentLeds[6] = buffer[6];
+      if(bufsize > 7) currentLeds[7] = buffer[7]; 
+    }
+  }
+
+  setLeds();
+}
 
 void setup() {
   // Start serial
   Serial.begin(115200);
-    
+
   // Allow time for the display to power up and communications to begin
   delay(1000);
 
@@ -151,7 +317,7 @@ void setup() {
   }
 
   // Set up HID
-  usb_hid.setPollInterval(2);
+  usb_hid.setPollInterval(10); // Poll every 10ms
   usb_hid.setReportDescriptor(desc_hid_report, sizeof(desc_hid_report));
   usb_hid.setStringDescriptor("TinyUSB HID Composite");
   usb_hid.setReportCallback(get_report_callback, set_report_callback);
@@ -216,6 +382,9 @@ void setup() {
     Serial.println("OLED configured.");
   }
 
+  // Turnup i2c speeds
+  Wire.setClock(400000L); // Increase I2C speed to 400kHz
+
   // Setup axes pins
   for (uint8_t i; i < axes_size; i++) {
     pinMode(axes[i], INPUT);
@@ -269,86 +438,68 @@ void setup() {
     display.setCursor(0,0);
     display.print("Starting!");
     display.display(); // actually display all of the above
+
+    displayJoystick.draw();
   }
 
   setLeds();
+
+  // Create queues
+  queueAxes = xQueueCreate(QUEUE_SIZE, 10 * sizeof(int32_t));
+  if (queueAxes == NULL) {
+    Serial.println("Failed to create axes queue!");
+    while (1);
+  }
+
+  queueButtons = xQueueCreate(QUEUE_SIZE, 17 * sizeof(bool));
+  if (queueButtons == NULL) {
+    Serial.println("Failed to create button queue!");
+    while (1);
+  }
+
+  // Create tasks
+  xTaskCreatePinnedToCore(
+    taskReadAxes,
+    "axesTask",
+    2000,  // Task stack
+    NULL,
+    1,
+    NULL,
+    1  // Core
+  );
+  xTaskCreatePinnedToCore(
+    taskReadButtons,
+    "buttonsTask",
+    2000,  // Task stack
+    NULL,
+    1,
+    NULL,
+    1  // Core
+  );
+
   timestamp_last = millis();
   Serial.println("Setup complete!");
 }
 
 void loop() {
-
-  // pol axes
-  int32_t L1X = analogRead(axes[0]);
-  int32_t L1Y = analogRead(axes[1]);
-  int32_t L2X = analogRead(axes[2]);
-  int32_t L2Y = analogRead(axes[3]);
-  int32_t R1X = analogRead(axes[4]);
-  int32_t R1Y = analogRead(axes[5]);  
-  int32_t R2X = analogRead(axes[6]);
-  int32_t R2Y = analogRead(axes[7]);
-  int32_t Pot = analogRead(axes[8]);
-
-  L1X  = (L1X - 2048) * 16.0;
-  L1Y  = (L1Y - 2048) * 16.0;
-  L2X  = (L2X - 2048) * 16.0;
-  L2Y  = (L2Y - 2048) * 16.0;
-  R1X  = (R1X - 2048) * 16.0;
-  R1Y  = (R1Y - 2048) * 16.0;
-  R2X  = (R2X - 2048) * 16.0;
-  R2Y  = (R2Y - 2048) * 16.0;
-  Pot  = (Pot - 2048) * 16.0;
-
-  if (L1X < -32767) L1X = -32767; if (L1X > 32767) L1X = 32767;
-  if (L1Y < -32767) L1Y = -32767; if (L1Y > 32767) L1Y = 32767;
-  if (L2X < -32767) L2X = -32767; if (L2X > 32767) L2X = 32767;
-  if (L2Y < -32767) L2Y = -32767; if (L2Y > 32767) L2Y = 32767;
-  if (R1X < -32767) R1X = -32767; if (R1X > 32767) R1X = 32767;
-  if (R1Y < -32767) R1Y = -32767; if (R1Y > 32767) R1Y = 32767;
-  if (R2X < -32767) R2X = -32767; if (R2X > 32767) R2X = 32767;
-  if (R2Y < -32767) R2Y = -32767; if (R2Y > 32767) R2Y = 32767;
-  if (Pot < -32767) Pot = -32767; if (Pot > 32767) Pot = 32767;
+  // Serial.println("Looping:"); 
   
-  // pol buttons
-  bool lbutton1 = false; // left
-  bool lbutton2 = false; // up
-  bool lbutton3 = false; // right
-  bool lbutton4 = false; // down
-
-  bool rbutton1 = false; // left
-  bool rbutton2 = false; // up
-  bool rbutton3 = false; // right
-  bool rbutton4 = false; // down
-  
-  bool  b1  = !digitalRead(buttons[0]);
-  bool  b2  = !digitalRead(buttons[1]);
-  bool  b3  = !digitalRead(buttons[2]);
-  bool  b4  = !digitalRead(buttons[3]);
-  bool  b5  = !digitalRead(buttons[4]);
-  bool  b6  = !digitalRead(buttons[5]);
-  bool  b7  = !digitalRead(buttons[6]);
-  bool  b8  = !digitalRead(buttons[7]);
-
-  if(arcade_left_installed) {
-    lbutton1 = !arcade_left.digitalRead(arcade_switchs[3]); // left
-    lbutton2 = !arcade_left.digitalRead(arcade_switchs[0]); // up
-    lbutton3 = !arcade_left.digitalRead(arcade_switchs[1]); // right
-    lbutton4 = !arcade_left.digitalRead(arcade_switchs[2]); // down
+  // get axes
+  // Serial.println("Get axes");
+  int32_t a[10] = {0};
+  if (!xQueueReceive(queueAxes, &a, portMAX_DELAY)) {
+    Serial.println("Failed to get Axes from queue.");
   }
-  if(arcade_right_installed) {
-    rbutton1 = !arcade_right.digitalRead(arcade_switchs[3]); // left
-    rbutton2 = !arcade_right.digitalRead(arcade_switchs[0]); // up
-    rbutton3 = !arcade_right.digitalRead(arcade_switchs[1]); // right
-    rbutton4 = !arcade_right.digitalRead(arcade_switchs[2]); // down
+  // get buttons
+  // Serial.println("Get buttons");
+  bool b[17] = {false};
+  if (!xQueueReceive(queueButtons, &b, portMAX_DELAY)) {
+    Serial.println("Failed to get Buttons from queue.");
   }
 
-  // pol encoder
-  int32_t Enc = 0; 
-  bool bEnc = false;
   if (encoder_installed) {
-    Enc = encoder.getEncoderPosition(); 
-    bEnc = !encoder.digitalRead(encoder_switch);   
-  }
+      a[9] = encoder.getEncoderPosition(); 
+    }
 
   // #ifdef TINYUSB_NEED_POLLING_TASK
   // // Manual call tud_task since it isn't called by Core's background
@@ -361,7 +512,7 @@ void loop() {
   }
 
   // Remote wakeup
-  if ( TinyUSBDevice.suspended() && (b1 || b2 || b3 || b4) )
+  if ( TinyUSBDevice.suspended() && (b[8] || b[9] || b[10] || b[11]) )
   {
     // Wake up host if we are in suspend mode
     // and REMOTE_WAKEUP feature is enabled by host
@@ -369,9 +520,10 @@ void loop() {
   }
 
   // switch modes with debounce
-  if (bEnc && mouse_mode) {
+  if (b[16] && keyboard_mode) {
     Serial.println("Switching to Joystick");
-    mouse_mode = false;
+    keyboard_mode = false;
+    if(display_installed) displayJoystick.draw();
 
     if(usb_hid.ready()) {
       usb_hid.mouseReport(MOUSE_ID, 0, 0, 0, 0, 0);
@@ -384,9 +536,10 @@ void loop() {
     }
     delay(500);
     
-  } else if (bEnc) {
-    Serial.println("Switching to Mouse");
-    mouse_mode = true;
+  } else if (b[16]) {
+    Serial.println("Switching to Keyboard");
+    keyboard_mode = true;
+    if(display_installed) displayKeyboard.draw();
 
     joystick.l1x = 0.0;
     joystick.l1y = 0.0;
@@ -399,19 +552,22 @@ void loop() {
     joystick.pot = 0.0;
     joystick.buttons = 0; 
     
-    usb_hid.sendReport(JOYSTICK_ID, &joystick, sizeof(joystick));  
+    if(usb_hid.ready()) {  
+      usb_hid.sendReport(JOYSTICK_ID, &joystick, sizeof(joystick));  
+    }
     delay(500);
   }
 
   // Update active report
-  // Mouse Mode
-  if (mouse_mode) {
+  // Keyboard Mode
+  if (keyboard_mode) {
+    Serial.println("Keyboard mode");
     // Mouse report
     if (usb_hid.ready()) {
-      mouse_x =  static_cast<int8_t>(R1X/1028);
-      mouse_y = -static_cast<int8_t>(R1Y/1028);
-      mouse_h =  static_cast<int8_t>(R2X/4096);
-      mouse_v =  static_cast<int8_t>(R2Y/4096);
+      int8_t mouse_x =  static_cast<int8_t>(a[2]/1028);
+      int8_t mouse_y = -static_cast<int8_t>(a[3]/1028);
+      int8_t mouse_h =  static_cast<int8_t>(a[6]/4096);
+      int8_t mouse_v =  static_cast<int8_t>(a[7]/4096);
 
       if (mouse_x < 2 && mouse_x > -2) mouse_x = 0;
       if (mouse_y < 2 && mouse_y > -2) mouse_y = 0;   
@@ -423,11 +579,11 @@ void loop() {
       if (mouse_h < -127) mouse_h = -127; if (mouse_h > 127) mouse_h = 127;
       if (mouse_v < -127) mouse_v = -127; if (mouse_v > 127) mouse_v = 127;    
       
-      uint8_t buttons  =  ( b2 << 0) 
-                        | ( b4 << 1) 
-                        | ( b3 << 2) 
-                        // | ( b3       << 3)
-                        // | ( b4       << 4)
+      uint8_t buttons  =  ( b[9] << 0) 
+                        | ( b[11] << 1) 
+                        | ( b[10] << 2) 
+                        // | ( b[10]       << 3)
+                        // | ( b[11]       << 4)
                         ;
       // send mouse report
       usb_hid.mouseReport(MOUSE_ID, buttons, mouse_x, mouse_y, mouse_v, mouse_h);
@@ -438,14 +594,14 @@ void loop() {
 
     // Determine keyboard matrix mode
     char const (*matrix)[keyCols];
-    if(abs(Enc % 2) == 1) matrix = keyMatrix_L2;
+    if(abs(b[9] % 2) == 1) matrix = keyMatrix_L2;
     else matrix = keyMatrix_L1;
     
     // Keyboard report
     if (usb_hid.ready()) {
       // Caculate joystick position on keyMatrix
-      key_x = static_cast<int8_t>( L1X * (keyCols - 1) * 6 / 2 / 32767);  // characters are 5 pixels wide with a 1 pixel gap for 6 center to center
-      key_y = static_cast<int8_t>(-L1Y * (keyRows - 1) * 8 / 2 / 32767);  // characters are 7 pixels tall with a 1 pixel gap for 8 center to center
+      key_x = static_cast<int8_t>( a[0] * (keyCols - 1) * 6 / 2 / 32767);  // characters are 5 pixels wide with a 1 pixel gap for 6 center to center
+      key_y = static_cast<int8_t>(-a[1] * (keyRows - 1) * 8 / 2 / 32767);  // characters are 7 pixels tall with a 1 pixel gap for 8 center to center
       key_i = (key_y + (keyRows) * 8 / 2 ) / 8;
       key_j = (key_x + (keyCols) * 6 / 2 ) / 6;
 
@@ -454,43 +610,43 @@ void loop() {
       uint8_t keys[6] = { 0 }; // Be careful not to exceed the report limit of 6 keys
       
       // Capture matrix key if button pressed 
-      if (rbutton4) {
+      if (b[7]) {
         modifier      = ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
         keys[count++] = ascii2hid[(uint8_t)matrix[key_i][key_j]][1];
       }
 
       // direct button keys
-      if (rbutton1) {
+      if (b[4]) {
         if(count < 6) keys[count++] = HID_KEY_SHIFT_LEFT;
       }
-      if (rbutton2) {
+      if (b[5]) {
         if(count < 6) keys[count++] = HID_KEY_CONTROL_LEFT;
       }
-      if (rbutton3) {
+      if (b[6]) {
         if(count < 6) keys[count++] = HID_KEY_ALT_LEFT;
       }
-      if (lbutton1) {
+      if (b[0]) {
         if(count < 6) keys[count++] = HID_KEY_HOME;
       }
-      if (lbutton2) {
+      if (b[1]) {
         if(count < 6) keys[count++] = HID_KEY_ESCAPE;
       }
-      if (lbutton3) {
+      if (b[2]) {
         if(count < 6) keys[count++] = HID_KEY_END;
       }
-      if (lbutton4) {
+      if (b[3]) {
         if(count < 6) keys[count++] = HID_KEY_ENTER;
       }
-      // if (b1) {
+      // if (b[8]) {
       //   if(count < 6) keys[count++] = HID_KEY_GUI_LEFT;
       // }
-      if (L2Y > 15000) {
+      if (a[5] > 15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_UP;
-      } else if (L2X >  15000) {
+      } else if (a[4] >  15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_RIGHT;
-      } else if (L2Y < -15000) {
+      } else if (a[5] < -15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_DOWN;
-      } else if (L2X < -15000) {
+      } else if (a[4] < -15000) {
         if(count < 6) keys[count++] = HID_KEY_ARROW_LEFT;
       }
 
@@ -507,47 +663,44 @@ void loop() {
       Serial.println("Keyboard not ready!");
     }
 
-    lastEnc = Enc;
+    lastEnc = a[9];
 
     if(display_installed) {
-      display.fillRect(0, 0, 64, 128, SH110X_BLACK);  
-      // Mouse feedback in upper part of display
-      drawMouse(0, 0, R1X, R1Y, R2X, R2Y, b2, b3, b4, lbutton1, lbutton2, lbutton3, lbutton4, rbutton1, rbutton2, rbutton3);
-      // Draw keyboard matrix in lower display
-      drawKeyMatrix(2, 72, matrix);
+      displayKeyboard.update(a[2], a[3], a[6], a[7], b[9], b[10], b[11], b[0], b[1], b[2], b[3], b[4], b[5], b[6], matrix, key_i, key_j);
     }
-  // Keyboard mode
+  // Joystick mode
   } else { 
-    joystick.l1x =  static_cast<int16_t>(L1X);
-    joystick.l1y = -static_cast<int16_t>(L1Y);
-    joystick.r1x =  static_cast<int16_t>(R1X);
-    joystick.r1y = -static_cast<int16_t>(R1Y);
-    joystick.l2x =  static_cast<int16_t>(L2X);
-    joystick.l2y = -static_cast<int16_t>(L2Y);
-    joystick.r2x =  static_cast<int16_t>(R2X);
-    joystick.r2y = -static_cast<int16_t>(R2Y);
-    joystick.pot =  static_cast<int16_t>(Pot);
+    // Serial.println("Joystick Mode");
+    joystick.l1x =  static_cast<int16_t>(a[0]);
+    joystick.l1y = -static_cast<int16_t>(a[1]);
+    joystick.r1x =  static_cast<int16_t>(a[2]);
+    joystick.r1y = -static_cast<int16_t>(a[3]);
+    joystick.r2x =  static_cast<int16_t>(a[4]);
+    joystick.r2y = -static_cast<int16_t>(a[5]);
+    joystick.r2x =  static_cast<int16_t>(a[6]);
+    joystick.r2y = -static_cast<int16_t>(a[7]);
+    joystick.pot =  static_cast<int16_t>(a[8]);
 
     // store buttons
-    joystick.buttons  = ( lbutton1 << 0) 
-                      | ( lbutton2 << 1) 
-                      | ( lbutton3 << 2) 
-                      | ( lbutton4 << 3)
-                      | ( rbutton1 << 4) 
-                      | ( rbutton2 << 5) 
-                      | ( rbutton3 << 6) 
-                      | ( rbutton4 << 7)                    
-                      | ( b1 << 8) 
-                      | ( b2 << 9) 
-                      | ( b3 << 10) 
-                      | ( b4 << 11) 
-                      | ( b5 << 12) 
-                      | ( b6 << 13) 
-                      | ( b7 << 14) 
-                      | ( b8 << 15)
+    joystick.buttons  = ( b[0] << 0) 
+                      | ( b[1] << 1) 
+                      | ( b[2] << 2) 
+                      | ( b[3] << 3)
+                      | ( b[4] << 4) 
+                      | ( b[5] << 5) 
+                      | ( b[6] << 6) 
+                      | ( b[7] << 7)                    
+                      | ( b[8] << 8) 
+                      | ( b[9] << 9) 
+                      | ( b[10] << 10) 
+                      | ( b[11] << 11) 
+                      | ( b[12] << 12) 
+                      | ( b[13] << 13) 
+                      | ( b[14] << 14) 
+                      | ( b[15] << 15)
                       ;
 
-    lastEnc = Enc;
+    lastEnc = a[9];
 
     // Send joystick report
     if (usb_hid.ready()) {
@@ -557,129 +710,25 @@ void loop() {
     }
 
     if(display_installed) {
-      display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-      display.fillRect(0, 0, 64, 128, SH110X_BLACK);
-      display.setCursor(0,0); display.print("Joystick:");
-      drawJoystick( 1, 17, 30, 30, L1X * 15 / 32768, -L1Y * 15 / 32768, b1); 
-      drawJoystick(33, 17, 30, 30, R1X * 15 / 32768, -R1Y * 15 / 32768, b2); 
-      drawButton( 4, 57, 4, lbutton1); drawButton(36, 57, 4, rbutton1);
-      drawButton(12, 50, 4, lbutton2); drawButton(44, 50, 4, rbutton2);
-      drawButton(20, 57, 4, lbutton3); drawButton(52, 57, 4, rbutton3);
-      drawButton(12, 64, 4, lbutton4); drawButton(44, 64, 4, rbutton4);
-      drawJoystick( 1, 73, 30, 30, L2X * 15 / 32768, -L2Y * 15 / 32768, b3); 
-      drawJoystick(33, 73, 30, 30, R2X * 15 / 32768, -R2Y * 15 / 32768, b4); 
-      drawBarCenter(32, 105, 6, Pot * 32 / 32768, false);
-      display.setCursor( 0, 112); display.print("EN: "); display.setCursor( 24, 112); display.print(Enc, DEC);     
+      displayJoystick.update(a, b);
     }
   }    
 
   // display values
   if(display_installed) {
     unsigned long timestamp = millis(); 
+    display.fillRect(0, 120, 64, 8, SH110X_BLACK);
     display.setCursor( 0, 120); display.print("DT: "); display.setCursor( 24, 120); display.print(timestamp-timestamp_last);
     timestamp_last = timestamp;  
     display.display();
   }
 
   if(encoder_installed) {
-    encoder_pixel.setPixelColor(0, ColorWheel(Enc & 0xFF));
+    encoder_pixel.setPixelColor(0, ColorWheel(a[9] & 0xFF));
     encoder_pixel.show();
   }
    
   yield();
-}
-
-void drawBarCenter(const int32_t &x, const int32_t &y, const int32_t &h, const int32_t &value, bool is_vert) {
-  if(is_vert) {
-    int32_t top    = std::min(y-1, y + value);
-    int32_t bottom = std::max(y+1, y + value); 
-    display.fillRect(x, top, h, bottom-top, SH110X_WHITE);
-  } else {
-    int32_t left  = std::min(x-1, x + value);
-    int32_t right = std::max(x+1, x + value); 
-    display.fillRect(left, y, right-left, h, SH110X_WHITE);
-  }
-}
-
-void drawButton(const int32_t &x, const int32_t &y, const int32_t &r, const bool &value_b) {
-  int32_t point_x = x + r / 2;
-  int32_t point_y = y + r / 2; 
-  if(value_b) {
-    display.fillCircle(point_x, point_y, r, SH110X_WHITE);
-  } else {
-    display.drawCircle(point_x, point_y, r, SH110X_WHITE);
-  }
-}
-
-void drawJoystick(const int32_t &x, const int32_t &y, const int32_t &w, const int32_t &h, 
-                  const int32_t &value_x, const int32_t &value_y, const bool &value_b) {
-  int32_t point_x = x + w / 2 + value_x;
-  int32_t point_y = y + w / 2 + value_y; 
-  display.drawRect(x, y, w, h, SH110X_WHITE);
-  if(value_b) {
-    display.fillCircle(point_x, point_y, 2, SH110X_WHITE);
-  } else {
-    display.drawCircle(point_x, point_y, 2, SH110X_WHITE);
-  }
-}
-
-void drawMouse(const int32_t &x, const int32_t &y, const int32_t &value_x, const int32_t &value_y, const int32_t &value_h, const int32_t &value_v,
-               const bool &bleft, const bool &bright, const bool &bcenter, const bool &bhome, const bool &besc, const bool &bend, 
-               const bool &benter, const bool &bshift, const bool &bcontrol, const bool &balt) {
-
-  display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-  display.setCursor( x,  y); display.print("Mouse:");
-  drawJoystick( x+25, y+17, 30, 30, value_x * 15 / 32768, -value_y * 15 / 32768, false);
-  drawBarCenter(x+40, y+48, 7,  value_h * 32 / 32768, false);
-  drawBarCenter(x+56, y+32, 7, -value_v * 32 / 32768, true);
-  drawButton(x+28, y+10, 3, bleft); 
-  drawButton(x+38, y+10, 3, bright);
-  drawButton(x+48, y+10, 3, bcenter);
-  display.setCursor(x+0,y+ 8); display.setTextColor(bhome    ? SH110X_BLACK : SH110X_WHITE, bhome    ? SH110X_WHITE : SH110X_BLACK); display.print("Hom");
-  display.setCursor(x+0,y+16); display.setTextColor(besc     ? SH110X_BLACK : SH110X_WHITE, besc     ? SH110X_WHITE : SH110X_BLACK); display.print("Esc");
-  display.setCursor(x+0,y+24); display.setTextColor(bend     ? SH110X_BLACK : SH110X_WHITE, bend     ? SH110X_WHITE : SH110X_BLACK); display.print("End");
-  display.setCursor(x+0,y+32); display.setTextColor(benter   ? SH110X_BLACK : SH110X_WHITE, benter   ? SH110X_WHITE : SH110X_BLACK); display.print("Ent");            
-  display.setCursor(x+0,y+40); display.setTextColor(bshift   ? SH110X_BLACK : SH110X_WHITE, bshift   ? SH110X_WHITE : SH110X_BLACK); display.print("Sft");
-  display.setCursor(x+0,y+48); display.setTextColor(bcontrol ? SH110X_BLACK : SH110X_WHITE, bcontrol ? SH110X_WHITE : SH110X_BLACK); display.print("Ctr");
-  display.setCursor(x+0,y+56); display.setTextColor(balt     ? SH110X_BLACK : SH110X_WHITE, balt     ? SH110X_WHITE : SH110X_BLACK); display.print("Alt");
-  display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-}
-
-void drawKeyMatrix(const int32_t &x, const int32_t &y, const char (*matrix)[keyCols]) {
-  for(uint8_t i = 0; i < keyRows; i++){
-    display.setCursor( x, y + 8*i); 
-    for(uint8_t j = 0; j < keyCols; j++) {
-      // Highlight the appropriate key
-      if ((i == key_i) && (j ==  key_j)) display.setTextColor(SH110X_BLACK, SH110X_WHITE); 
-        if (     matrix[i][j] == 0x08) display.write(0x11); // backspace
-        else if (matrix[i][j] == 0x09) display.write(0x09); // tab
-        else if (matrix[i][j] == 0x0A) display.write(0xD9); // line feed
-        else if (matrix[i][j] == 0x0D) display.write(0x14); // carriage return
-        else if (matrix[i][j] == 0x1B) display.write(0x13); // escape
-        else if (matrix[i][j] == 0x01) display.write(0x18); // start of file
-        else if (matrix[i][j] == 0x02) display.write(0x1B); // home
-        else if (matrix[i][j] == 0x03) display.write(0x1A); // end
-        else if (matrix[i][j] == 0x04) display.write(0x19); // end of file
-        else if (matrix[i][j] == 0x7F) display.write(0x10); // delete
-        else if (matrix[i][j] == 0x11) display.write('1'); // F1
-        else if (matrix[i][j] == 0x12) display.write('2'); // F2
-        else if (matrix[i][j] == 0x13) display.write('3'); // F3
-        else if (matrix[i][j] == 0x14) display.write('4'); // F4
-        else if (matrix[i][j] == 0x15) display.write('5'); // F5
-        else if (matrix[i][j] == 0x16) display.write('6'); // F6
-        else if (matrix[i][j] == 0x17) display.write('7'); // F7
-        else if (matrix[i][j] == 0x18) display.write('8'); // F8
-        else if (matrix[i][j] == 0x19) display.write('9'); // F9
-        else if (matrix[i][j] == 0x1A) display.write('0'); // F10
-        else if (matrix[i][j] == 0x1C) display.write('1'); // F11
-        else if (matrix[i][j] == 0x1D) display.write('2'); // F12
-        else if (matrix[i][j] == 0x0B) display.write(0xAE); // undo
-        else if (matrix[i][j] == 0x0C) display.write(0xAF); // redo
-
-        else display.write(matrix[i][j]);
-      if ((i == key_i) && (j ==  key_j)) display.setTextColor(SH110X_WHITE, SH110X_BLACK);          
-    }
-  }
 }
 
 uint32_t ColorWheel(byte WheelPos) {
@@ -694,85 +743,3 @@ uint32_t ColorWheel(byte WheelPos) {
   WheelPos -= 170;
   return encoder_pixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }
-
-// Invoked when received GET_REPORT control request
-// Application must fill buffer report's content and return its length.
-// Return zero will cause the stack to STALL request
-uint16_t get_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen) {
-  // not used in this example
-  (void) buffer;
-  (void) reqlen;
-
-  // Populate the buffer with led data
-  if(report_id == JOYSTICK_ID) {
-    if (report_type == HID_REPORT_TYPE_FEATURE) {
-        buffer[0] = report_id;
-        buffer[1] = currentLeds[0];
-        buffer[2] = currentLeds[1];
-        buffer[3] = currentLeds[2];
-        buffer[4] = currentLeds[3];
-        buffer[5] = currentLeds[4];
-        buffer[6] = currentLeds[5];
-        buffer[7] = currentLeds[6];
-        buffer[8] = currentLeds[7];
-        return 9; // Return the number of bytes written
-    }
-  }
-  return 0; // Unsupported report
-}
-
-// Invoked when received SET_REPORT control request or
-// received data on OUT endpoint ( Report ID = 0, Type = 0 )
-void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-  // This example doesn't use report ID
-  (void) report_id;
-  
-  // Check if it is the correct report and if SDL sent output data
-  if(report_id == JOYSTICK_ID) {
-    if (report_type == HID_REPORT_TYPE_OUTPUT) {
-      // Buffer contains the LED/Rumble data from SDL
-      if(bufsize > 0) currentLeds[0] = buffer[0];
-      if(bufsize > 1) currentLeds[1] = buffer[1];
-      if(bufsize > 2) currentLeds[2] = buffer[2];
-      if(bufsize > 3) currentLeds[3] = buffer[3]; 
-      if(bufsize > 4) currentLeds[4] = buffer[4];
-      if(bufsize > 5) currentLeds[5] = buffer[5];
-      if(bufsize > 6) currentLeds[6] = buffer[6];
-      if(bufsize > 7) currentLeds[7] = buffer[7]; 
-    }
-  }
-
-  setLeds();
-}
-
-// // Output report callback for keyboard indicator such as Caplocks
-// void set_keyboard_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-//   (void) report_id;
-//   (void) bufsize;
-
-//   // LED indicator is output report with only 1 byte length
-//   if (report_type != HID_REPORT_TYPE_OUTPUT) return;
-
-// // #ifdef LED_BUILTIN
-// //   // turn on LED if capslock is set
-// //   digitalWrite(LED_BUILTIN, ledIndicator & KEYBOARD_LED_CAPSLOCK);
-// // #endif
-// }
-
-void setLeds() {
-  // Setup arcade controllers
-  if(arcade_left_installed) {
-    arcade_left.analogWrite(arcade_leds[0], currentLeds[0]);
-    arcade_left.analogWrite(arcade_leds[1], currentLeds[1]);
-    arcade_left.analogWrite(arcade_leds[2], currentLeds[2]);
-    arcade_left.analogWrite(arcade_leds[3], currentLeds[3]);
-  }
-
-  if(arcade_right_installed) {
-    arcade_right.analogWrite(arcade_leds[0], currentLeds[4]);
-    arcade_right.analogWrite(arcade_leds[1], currentLeds[5]);
-    arcade_right.analogWrite(arcade_leds[2], currentLeds[6]);
-    arcade_right.analogWrite(arcade_leds[3], currentLeds[7]);
-  }
-}
-
