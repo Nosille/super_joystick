@@ -1,13 +1,12 @@
+#include <string>
 #include <USB.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SH110X.h>
 #include <Adafruit_TinyUSB.h>
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
 
-#include "sketches.h"
+#include "display.h"
 #include "hid_mouse_description.h"
 #include "hid_joystick_description.h"
 #include "hid_keyboard_description.h"
@@ -36,7 +35,7 @@ static const uint8_t encoder_switch = 24;
 static const uint8_t encoder_led = 6;
 
 // Devices
-Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
+Display display(SH1107_ADDR);
 Adafruit_seesaw arcade_left;
 Adafruit_seesaw arcade_right;
 Adafruit_seesaw encoder;
@@ -54,67 +53,7 @@ uint8_t const desc_hid_report[] = {
     MY_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(KEYBOARD_ID))
 };
 
-// USB HID object
 Adafruit_USBD_HID usb_hid;
-
-// Keyboard character list
-uint8_t const keyRows = 6;
-uint8_t const keyCols = 10;
-char const keyMatrix_L1[keyRows][keyCols] = {
-  // bksp  lf   cr  esc  tab  home end ^home ^end del
-    {0x08,0x0A,0x0D,0x1B,0x09,0x02,0x03,0x01,0x04,0x7F},
-    { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'}, 
-    { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'},
-    { 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'},
-    { 'u', 'v', 'w', 'x', 'y', 'z', '-', '=', '[', ']'},
-    {0x0B,0X0C,'\`','\'', ';', ',', '.', '/','\\', ' '}
-  // Undo Redo
-};
-char const keyMatrix_L2[keyRows][keyCols] = {
-  //  F1   F2   F3   F4   F5   F6   F7   F8   F9   F10
-    {0x11,0X12,0X13,0X14,0X15,0X16,0X17,0X18,0X19,0X1A},
-    { '!', '@', '#', '$', '%', '^', '&', '*', '(', ')'},
-    { 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'},
-    { 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'},
-    { 'U', 'V', 'W', 'X', 'Y', 'Z', '_', '+','\{','\}'},
-    {0x1C,0x1D, '~','\"', ':', '<', '>', '?', '|', ' '}
-  // F11  F12   
-};
-// uint8_t const keyRows = 6;
-// uint8_t const keyCols = 5;
-// char const keyMatrix_L1[keyRows][keyCols] = {
-//     { 'a', 'b', 'c', 'd', 'e'},
-//     { 'f', 'g', 'h', 'i', 'j'},
-//     { 'k', 'l', 'm', 'n', 'o'},
-//     { 'p', 'q', 'r', 's', 't'},
-//     { 'u', 'v', 'w', 'x', 'y'},
-//     { 'z', ',', '.','\\', ' '}
-// };
-// char const keyMatrix_L2[keyRows][keyCols] = {
-//     { 'A', 'B', 'C', 'D', 'E'},
-//     { 'F', 'G', 'H', 'I', 'J'},
-//     { 'K', 'L', 'M', 'N', 'O'},
-//     { 'P', 'Q', 'R', 'S', 'T'},
-//     { 'U', 'V', 'W', 'X', 'Y'},
-//     { 'Z', '<', '>', '|', '_'},
-// };
-// char const keyMatrix_L3[keyRows][keyCols] = {
-//     { '1', '2', '3', '4', '5'},
-//     { '6', '7', '8', '9', '0'},
-//     { '!', '@', '#', '$', '%'},
-//     { '^', '&', '*', '(', ')'},
-//     { '/', '~', '?', '[', ']'},
-//     { ' ', ':', ';','\{','\}'}
-// };
-// char const keyMatrix_L3[keyRows][keyCols] = {
-//     {0x11,0X12,0X13,0X14,0X15},
-//     {0X16,0X17,0X18,0X19,0X1A},
-//     {0x1C,0x1D, '+', '-', '='},
-//     {0x0B,0x0C,'\`','\'','\"'},
-//     {0x09,0x02,0x03,0x01,0x04},
-//     {0x08,0x0A,0x0D,0x1B,0x7F}
-// }; 
-uint8_t const ascii2hid[128][2] = { ASCII_TO_KEYCODE };
 
 // Queues
 QueueHandle_t queueAxes = NULL;
@@ -122,8 +61,6 @@ QueueHandle_t queueButtons = NULL;
 
 // Global variables
 my_hid_report_t joystick;
-DisplayJoystick displayJoystick(&display);
-DisplayKeyboard displayKeyboard(&display);
 int keyboard_mode = false;
 int32_t lastEnc = 0;
 int8_t currentLeds[] = {32, 32, 32, 32, 32, 32, 32, 32}; // current brightness of leds, 0 to 255
@@ -214,18 +151,15 @@ void taskReadButtons(void *parameter) {
     b[14] = !digitalRead(buttons[6]);
     b[15] = !digitalRead(buttons[7]);
 
-    if (encoder_installed) {
-      b[16] = !encoder.digitalRead(encoder_switch);   
-    }
-
-    UBaseType_t free_space = uxQueueSpacesAvailable(queueButtons);
-    UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
-    Serial.print("taskButtons: Free space in queue: "); Serial.print(free_space); 
-    Serial.print(", Stack high water mark free: "); Serial.println(stack_high_water_mark);
+    // UBaseType_t free_space = uxQueueSpacesAvailable(queueButtons);
+    // UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
+    // Serial.print("taskButtons: Free space in queue: "); Serial.print(free_space); 
+    // Serial.print(", Stack high water mark free: "); Serial.println(stack_high_water_mark);
 
     xQueueOverwrite(queueButtons, &b);
-    unsigned long end = millis();
-    Serial.print("  Time: "); Serial.println(end - begin);
+    
+    // unsigned long end = millis();
+    // Serial.print("  Time: "); Serial.println(end - begin);
     vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms
   }
 }
@@ -317,7 +251,7 @@ void setup() {
   }
 
   // Set up HID
-  usb_hid.setPollInterval(10); // Poll every 10ms
+  usb_hid.setPollInterval(10); // Poll every 20ms
   usb_hid.setReportDescriptor(desc_hid_report, sizeof(desc_hid_report));
   usb_hid.setStringDescriptor("TinyUSB HID Composite");
   usb_hid.setReportCallback(get_report_callback, set_report_callback);
@@ -375,15 +309,15 @@ void setup() {
   }
 
   // Connect to OLED Display
-  if (!display.begin(SH1107_ADDR, true)) {
+  if (!display.begin()) {
     Serial.println("Couldn't find display!");
   } else {
     display_installed = true;
     Serial.println("OLED configured.");
   }
 
-  // Turnup i2c speeds
-  Wire.setClock(400000L); // Increase I2C speed to 400kHz
+  // Turn up i2c speeds
+  Wire.setClock(100000L); // Increase I2C speed to 100kHz
 
   // Setup axes pins
   for (uint8_t i; i < axes_size; i++) {
@@ -423,23 +357,7 @@ void setup() {
 
   // Setup display
   if(display_installed) {
-    display.display();  // I believe this shows the adafruit splash
-    delay(1000);
-
-    // Clear the buffer.
-    display.clearDisplay();
-    display.display();
-
-    // Setup display to show joystick data
-    display.setRotation(0);
-    display.setTextSize(1);
-    display.cp437(true);
-    display.setTextColor(SH110X_WHITE);
-    display.setCursor(0,0);
-    display.print("Starting!");
-    display.display(); // actually display all of the above
-
-    displayJoystick.draw();
+    display.setup();
   }
 
   setLeds();
@@ -498,8 +416,10 @@ void loop() {
   }
 
   if (encoder_installed) {
-      a[9] = encoder.getEncoderPosition(); 
-    }
+    lastEnc = encoder.getEncoderPosition();
+    a[9]  = encoder.getEncoderPosition();
+    b[16] = !encoder.digitalRead(encoder_switch);   
+  }
 
   // #ifdef TINYUSB_NEED_POLLING_TASK
   // // Manual call tud_task since it isn't called by Core's background
@@ -523,7 +443,7 @@ void loop() {
   if (b[16] && keyboard_mode) {
     Serial.println("Switching to Joystick");
     keyboard_mode = false;
-    if(display_installed) displayJoystick.draw();
+    if(display_installed) display.switchMode(0);
 
     if(usb_hid.ready()) {
       usb_hid.mouseReport(MOUSE_ID, 0, 0, 0, 0, 0);
@@ -539,7 +459,7 @@ void loop() {
   } else if (b[16]) {
     Serial.println("Switching to Keyboard");
     keyboard_mode = true;
-    if(display_installed) displayKeyboard.draw();
+    if(display_installed) display.switchMode(1);
 
     joystick.l1x = 0.0;
     joystick.l1y = 0.0;
@@ -561,7 +481,7 @@ void loop() {
   // Update active report
   // Keyboard Mode
   if (keyboard_mode) {
-    Serial.println("Keyboard mode");
+    // Serial.println("Keyboard mode");
     // Mouse report
     if (usb_hid.ready()) {
       int8_t mouse_x =  static_cast<int8_t>(a[2]/1028);
@@ -593,17 +513,23 @@ void loop() {
     }
 
     // Determine keyboard matrix mode
-    char const (*matrix)[keyCols];
-    if(abs(b[9] % 2) == 1) matrix = keyMatrix_L2;
-    else matrix = keyMatrix_L1;
+    char const (*matrix)[k_keyCols];
+    // Serial.print("lastEnc: "); Serial.println(lastEnc);   
+    if(abs(lastEnc) % 3 == 1) {
+      matrix = k_keyMatrix_L2;
+    }else if(abs(lastEnc) % 3 == 2) {
+      matrix = k_keyMatrix_L3;
+    } else {
+      matrix = k_keyMatrix_L1;
+    }
     
     // Keyboard report
     if (usb_hid.ready()) {
       // Caculate joystick position on keyMatrix
-      key_x = static_cast<int8_t>( a[0] * (keyCols - 1) * 6 / 2 / 32767);  // characters are 5 pixels wide with a 1 pixel gap for 6 center to center
-      key_y = static_cast<int8_t>(-a[1] * (keyRows - 1) * 8 / 2 / 32767);  // characters are 7 pixels tall with a 1 pixel gap for 8 center to center
-      key_i = (key_y + (keyRows) * 8 / 2 ) / 8;
-      key_j = (key_x + (keyCols) * 6 / 2 ) / 6;
+      key_x = static_cast<int8_t>( a[0] * (k_keyCols - 1) * 8 / 2 / 32767);  // characters are 5 pixels wide with a 1 pixel gap for 6 center to center
+      key_y = static_cast<int8_t>(-a[1] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are 7 pixels tall with a 1 pixel gap for 8 center to center
+      key_i = (key_y + (k_keyRows) * 8 / 2 ) / 8;
+      key_j = (key_x + (k_keyCols) * 8 / 2 ) / 8;
 
       int count = 0;
       uint8_t modifier = 0;
@@ -611,8 +537,8 @@ void loop() {
       
       // Capture matrix key if button pressed 
       if (b[7]) {
-        modifier      = ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
-        keys[count++] = ascii2hid[(uint8_t)matrix[key_i][key_j]][1];
+        modifier      = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
+        keys[count++] = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][1];
       }
 
       // direct button keys
@@ -663,10 +589,10 @@ void loop() {
       Serial.println("Keyboard not ready!");
     }
 
-    lastEnc = a[9];
+    // lastEnc = a[9];
 
     if(display_installed) {
-      displayKeyboard.update(a[2], a[3], a[6], a[7], b[9], b[10], b[11], b[0], b[1], b[2], b[3], b[4], b[5], b[6], matrix, key_i, key_j);
+      display.updateKeyboard(a, b);
     }
   // Joystick mode
   } else { 
@@ -700,7 +626,7 @@ void loop() {
                       | ( b[15] << 15)
                       ;
 
-    lastEnc = a[9];
+    // lastEnc = a[9];
 
     // Send joystick report
     if (usb_hid.ready()) {
@@ -710,21 +636,19 @@ void loop() {
     }
 
     if(display_installed) {
-      displayJoystick.update(a, b);
+      display.updateJoystick(a, b);
     }
   }    
 
-  // display values
+  // display info
   if(display_installed) {
     unsigned long timestamp = millis(); 
-    display.fillRect(0, 120, 64, 8, SH110X_BLACK);
-    display.setCursor( 0, 120); display.print("DT: "); display.setCursor( 24, 120); display.print(timestamp-timestamp_last);
-    timestamp_last = timestamp;  
-    display.display();
+    display.updateInfo(timestamp, timestamp_last);
+    timestamp_last = timestamp;      
   }
 
   if(encoder_installed) {
-    encoder_pixel.setPixelColor(0, ColorWheel(a[9] & 0xFF));
+    encoder_pixel.setPixelColor(0, ColorWheel(lastEnc & 0xFF));
     encoder_pixel.show();
   }
    
