@@ -416,7 +416,6 @@ void loop() {
   }
 
   if (encoder_installed) {
-    lastEnc = encoder.getEncoderPosition();
     a[9]  = encoder.getEncoderPosition();
     b[16] = !encoder.digitalRead(encoder_switch);   
   }
@@ -515,9 +514,9 @@ void loop() {
     // Determine keyboard matrix mode
     char const (*matrix)[k_keyCols];
     // Serial.print("lastEnc: "); Serial.println(lastEnc);   
-    if(abs(lastEnc) % 3 == 1) {
+    if(abs(a[9]) % 3 == 1) {
       matrix = k_keyMatrix_L2;
-    }else if(abs(lastEnc) % 3 == 2) {
+    }else if(abs(a[9]) % 3 == 2) {
       matrix = k_keyMatrix_L3;
     } else {
       matrix = k_keyMatrix_L1;
@@ -589,7 +588,7 @@ void loop() {
       Serial.println("Keyboard not ready!");
     }
 
-    // lastEnc = a[9];
+    lastEnc = a[9];
 
     if(display_installed) {
       display.updateKeyboard(a, b);
@@ -626,7 +625,7 @@ void loop() {
                       | ( b[15] << 15)
                       ;
 
-    // lastEnc = a[9];
+    lastEnc = a[9];
 
     // Send joystick report
     if (usb_hid.ready()) {
@@ -648,7 +647,7 @@ void loop() {
   }
 
   if(encoder_installed) {
-    encoder_pixel.setPixelColor(0, ColorWheel(lastEnc & 0xFF));
+    encoder_pixel.setPixelColor(0, ColorWheel(a[9] & 0xFF));
     encoder_pixel.show();
   }
    

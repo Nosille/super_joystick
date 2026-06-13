@@ -426,7 +426,7 @@ class DisplayKeyboard {
     void update(const int32_t *a, const bool *b) {
       // Serial.println("update Keyboard");
       count++;
-      Serial.println(count);      
+      // Serial.println(count);      
       if (count == 1) m_joy1.update(a[2], -a[3], 0);
       if (count == 1) m_button1.update(b[9]);
       if (count == 1) m_button2.update(b[10]);
@@ -446,9 +446,9 @@ class DisplayKeyboard {
       
       // Determine current matrixf
       uint8_t n = 0;
-      // if(abs(a[9]) % 3 == 1) n = 1;
-      // else if(abs(a[9]) % 3 == 2) n = 2;
-      // else n = 0;
+      if(abs(a[9]) % 3 == 1) n = 1;
+      else if(abs(a[9]) % 3 == 2) n = 2;
+      else n = 0;
       // Serial.print(a[9]); Serial.print(" : "); Serial.println(n);   
 
       // Caculate joystick position on keyMatrix
