@@ -27,6 +27,7 @@ class DisplayJoy {
       m_h = ht * 8;
       m_r = r;
     }
+    
     void draw() {
       m_display->setDrawColor(0);
       m_display->drawBox(m_x, m_y, m_w, m_h); 

@@ -31,6 +31,7 @@ static const uint8_t axes_size = sizeof(axes) / sizeof(axes[0]);
 static const uint8_t buttons_size = sizeof(buttons) / sizeof(buttons[0]);
 static const uint8_t arcade_switchs[] = {18, 19, 20, 2};
 static const uint8_t arcade_leds[] = {12, 13, 0, 1};
+static const uint8_t arcade_led_count = sizeof(arcade_leds) / sizeof(arcade_leds[0]);
 static const uint8_t encoder_switch = 24;
 static const uint8_t encoder_led = 6;
 
@@ -54,6 +55,7 @@ uint8_t const desc_hid_report[] = {
 };
 
 Adafruit_USBD_HID usb_hid;
+TaskHandle_t taskInputsHandle = NULL;
 
 // Queues
 QueueHandle_t queueAxes = NULL;
@@ -63,7 +65,8 @@ QueueHandle_t queueButtons = NULL;
 my_hid_report_t joystick;
 int keyboard_mode = false;
 int32_t lastEnc = 0;
-int8_t currentLeds[] = {32, 32, 32, 32, 32, 32, 32, 32}; // current brightness of leds, 0 to 255
+int8_t current_leds_left[arcade_led_count]  = {32, 32, 32, 32}; // current brightness of leds, 0 to 255
+int8_t current_leds_right[arcade_led_count] = {32, 32, 32, 32};
 int8_t has_keys = 0;  // If keys were sent in last hid report
 int8_t key_x = 0;      // Current keyboard position
 int8_t key_y = 0;      // Current keyboard position
@@ -76,86 +79,51 @@ uint8_t key_j = 0;     // Current key col
 unsigned long timestamp_last; 
 
 // Tasks
-void taskReadAxes(void *parameter) {
-  for (;;) {
-    // unsigned long begin = millis();
-
-    int32_t a[10] = {0};
-    a[0] = analogRead(axes[0]);  // a[0]
-    a[1] = analogRead(axes[1]);  // a[1]
-    a[2] = analogRead(axes[2]);  // R1X
-    a[3] = analogRead(axes[3]);  // R1Y
-    a[4] = analogRead(axes[4]);  // a[4]
-    a[5] = analogRead(axes[5]);  // a[5]
-    a[6] = analogRead(axes[6]);  // R2X
-    a[7] = analogRead(axes[7]);  // R2Y
-    a[8] = analogRead(axes[8]);  // Pot
-
-    a[0]  = (a[0] - 2048) * 16.0;
-    a[1]  = (a[1] - 2048) * 16.0;
-    a[2]  = (a[2] - 2048) * 16.0;
-    a[3]  = (a[3] - 2048) * 16.0;
-    a[4]  = (a[4] - 2048) * 16.0;
-    a[5]  = (a[5] - 2048) * 16.0;
-    a[6]  = (a[6] - 2048) * 16.0;
-    a[7]  = (a[7] - 2048) * 16.0;
-    a[8]  = (a[8] - 2048) * 16.0;
-
-    if (a[0] < -32767) a[0] = -32767; if (a[0] > 32767) a[0] = 32767;
-    if (a[1] < -32767) a[1] = -32767; if (a[1] > 32767) a[1] = 32767;
-    if (a[2] < -32767) a[2] = -32767; if (a[2] > 32767) a[2] = 32767;
-    if (a[3] < -32767) a[3] = -32767; if (a[3] > 32767) a[3] = 32767;
-    if (a[4] < -32767) a[4] = -32767; if (a[4] > 32767) a[4] = 32767;
-    if (a[5] < -32767) a[5] = -32767; if (a[5] > 32767) a[5] = 32767;
-    if (a[6] < -32767) a[6] = -32767; if (a[6] > 32767) a[6] = 32767;
-    if (a[7] < -32767) a[7] = -32767; if (a[7] > 32767) a[7] = 32767;
-    if (a[8] < -32767) a[8] = -32767; if (a[8] > 32767) a[8] = 32767;
-
-    // UBaseType_t free_space = uxQueueSpacesAvailable(queueAxes);
-    // UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
-    // Serial.print("taskAxes: Free space in queue: "); Serial.print(free_space); 
-    // Serial.print(", Stack high water mark free: "); Serial.println(stack_high_water_mark);
-
-    xQueueOverwrite(queueAxes, &a);
-
-    // unsigned long end = millis();
-    // Serial.print("  Time: "); Serial.println(end - begin);
-    vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms
-
-  }
-}
-
-void taskReadButtons(void *parameter) {
+void taskReadInputs(void *parameter) {
   for (;;) {
     unsigned long begin = millis();
-    
+
+    int32_t a[10] = {0};
+    for (uint8_t i = 0; i < axes_size; ++i) {
+      a[i] = analogRead(axes[i]);
+    }
+
+    for (uint8_t i = 0; i < axes_size; ++i) {
+      a[i] = (a[i] - 2048) * 16.0;
+    }
+
+    for (uint8_t i = 0; i < axes_size; ++i) {
+      if (a[i] < -32767) a[i] = -32767;
+      if (a[i] > 32767) a[i] = 32767;
+    }
+
     bool b[17] = {false};
     if(arcade_left_installed) {
-      b[0] = !arcade_left.digitalRead(arcade_switchs[3]); // left
-      b[1] = !arcade_left.digitalRead(arcade_switchs[0]); // up
-      b[2] = !arcade_left.digitalRead(arcade_switchs[1]); // right
-      b[3] = !arcade_left.digitalRead(arcade_switchs[2]); // down
+      uint32_t mask = (1UL << arcade_switchs[0]) | (1UL << arcade_switchs[1]) | (1UL << arcade_switchs[2]) | (1UL << arcade_switchs[3]);
+      uint32_t state = arcade_left.digitalReadBulk(mask);
+      b[0] = !(state & (1UL << arcade_switchs[0])); // left
+      b[1] = !(state & (1UL << arcade_switchs[1])); // up
+      b[2] = !(state & (1UL << arcade_switchs[2])); // right
+      b[3] = !(state & (1UL << arcade_switchs[3])); // down
     }
     if(arcade_right_installed) {
-      b[4] = !arcade_right.digitalRead(arcade_switchs[3]); // left
-      b[5] = !arcade_right.digitalRead(arcade_switchs[0]); // up
-      b[6] = !arcade_right.digitalRead(arcade_switchs[1]); // right
-      b[7] = !arcade_right.digitalRead(arcade_switchs[2]); // down
+      uint32_t mask2 = (1UL << arcade_switchs[0]) | (1UL << arcade_switchs[1]) | (1UL << arcade_switchs[2]) | (1UL << arcade_switchs[3]);
+      uint32_t state2 = arcade_right.digitalReadBulk(mask2);
+      b[4] = !(state2 & (1UL << arcade_switchs[0])); // left
+      b[5] = !(state2 & (1UL << arcade_switchs[1])); // up
+      b[6] = !(state2 & (1UL << arcade_switchs[2])); // right
+      b[7] = !(state2 & (1UL << arcade_switchs[3])); // down
     }
-    b[8]  = !digitalRead(buttons[0]);
-    b[9]  = !digitalRead(buttons[1]);
-    b[10] = !digitalRead(buttons[2]);
-    b[11] = !digitalRead(buttons[3]);
-    b[12] = !digitalRead(buttons[4]);
-    b[13] = !digitalRead(buttons[5]);
-    b[14] = !digitalRead(buttons[6]);
-    b[15] = !digitalRead(buttons[7]);
+    for (uint8_t i = 0; i < buttons_size; ++i) {
+      b[8 + i] = !digitalRead(buttons[i]);
+    }
 
     // UBaseType_t free_space = uxQueueSpacesAvailable(queueButtons);
+    // Serial.print("taskButtons: Free space in queue: "); Serial.println(free_space); 
     // UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
-    // Serial.print("taskButtons: Free space in queue: "); Serial.print(free_space); 
-    // Serial.print(", Stack high water mark free: "); Serial.println(stack_high_water_mark);
+    // Serial.print(" high water mark free: "); Serial.println(stack_high_water_mark)
 
+    xQueueOverwrite(queueAxes, &a);
     xQueueOverwrite(queueButtons, &b);
     
     // unsigned long end = millis();
@@ -167,17 +135,15 @@ void taskReadButtons(void *parameter) {
 void setLeds() {
   // Setup arcade controllers
   if(arcade_left_installed) {
-    arcade_left.analogWrite(arcade_leds[0], currentLeds[0]);
-    arcade_left.analogWrite(arcade_leds[1], currentLeds[1]);
-    arcade_left.analogWrite(arcade_leds[2], currentLeds[2]);
-    arcade_left.analogWrite(arcade_leds[3], currentLeds[3]);
+    for (uint8_t i = 0; i < arcade_led_count; ++i) {
+      arcade_left.analogWrite(arcade_leds[i], current_leds_left[i]);
+    }
   }
 
   if(arcade_right_installed) {
-    arcade_right.analogWrite(arcade_leds[0], currentLeds[4]);
-    arcade_right.analogWrite(arcade_leds[1], currentLeds[5]);
-    arcade_right.analogWrite(arcade_leds[2], currentLeds[6]);
-    arcade_right.analogWrite(arcade_leds[3], currentLeds[7]);
+    for (uint8_t i = 0; i < arcade_led_count; ++i) {
+      arcade_right.analogWrite(arcade_leds[i], current_leds_right[i]);
+    }
   }
 }
 
@@ -193,15 +159,13 @@ uint16_t get_report_callback(uint8_t report_id, hid_report_type_t report_type, u
   if(report_id == JOYSTICK_ID) {
     if (report_type == HID_REPORT_TYPE_FEATURE) {
         buffer[0] = report_id;
-        buffer[1] = currentLeds[0];
-        buffer[2] = currentLeds[1];
-        buffer[3] = currentLeds[2];
-        buffer[4] = currentLeds[3];
-        buffer[5] = currentLeds[4];
-        buffer[6] = currentLeds[5];
-        buffer[7] = currentLeds[6];
-        buffer[8] = currentLeds[7];
-        return 9; // Return the number of bytes written
+        for (uint8_t i = 0; i < arcade_led_count; ++i) {
+          buffer[1 + i] = current_leds_left[i];
+        }
+        for (uint8_t i = 0; i < arcade_led_count; ++i) {
+          buffer[1 + arcade_led_count + i] = current_leds_right[i];
+        }
+        return 1 + 2 * arcade_led_count; // Return the number of bytes written
     }
   }
   return 0; // Unsupported report
@@ -212,19 +176,21 @@ uint16_t get_report_callback(uint8_t report_id, hid_report_type_t report_type, u
 void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
   // This example doesn't use report ID
   (void) report_id;
-  
+   
   // Check if it is the correct report and if SDL sent output data
   if(report_id == JOYSTICK_ID) {
     if (report_type == HID_REPORT_TYPE_OUTPUT) {
       // Buffer contains the LED/Rumble data from SDL
-      if(bufsize > 0) currentLeds[0] = buffer[0];
-      if(bufsize > 1) currentLeds[1] = buffer[1];
-      if(bufsize > 2) currentLeds[2] = buffer[2];
-      if(bufsize > 3) currentLeds[3] = buffer[3]; 
-      if(bufsize > 4) currentLeds[4] = buffer[4];
-      if(bufsize > 5) currentLeds[5] = buffer[5];
-      if(bufsize > 6) currentLeds[6] = buffer[6];
-      if(bufsize > 7) currentLeds[7] = buffer[7]; 
+      for (uint8_t i = 0; i < arcade_led_count; ++i) {
+        if (bufsize > i) {
+          current_leds_left[i] = buffer[i];
+        }
+      }
+      for (uint8_t i = 0; i < arcade_led_count; ++i) {
+        if (bufsize > arcade_led_count + i) {
+          current_leds_right[i] = buffer[arcade_led_count + i];
+        }
+      }
     }
   }
 
@@ -317,15 +283,15 @@ void setup() {
   }
 
   // Turn up i2c speeds
-  Wire.setClock(100000L); // Increase I2C speed to 100kHz
+  Wire.setClock(400000L); // Increase I2C speed to 400kHz
 
   // Setup axes pins
-  for (uint8_t i; i < axes_size; i++) {
+  for (uint8_t i = 0; i < axes_size; i++) {
     pinMode(axes[i], INPUT);
   }
 
   // Setup button pins
-  for (uint8_t i; i < buttons_size; i++) {
+  for (uint8_t i = 0; i < buttons_size; i++) {
     pinMode(buttons[i], INPUT_PULLUP);
   }
 
@@ -377,21 +343,12 @@ void setup() {
 
   // Create tasks
   xTaskCreatePinnedToCore(
-    taskReadAxes,
-    "axesTask",
+    taskReadInputs,
+    "inputsTask",
     2000,  // Task stack
     NULL,
     1,
-    NULL,
-    1  // Core
-  );
-  xTaskCreatePinnedToCore(
-    taskReadButtons,
-    "buttonsTask",
-    2000,  // Task stack
-    NULL,
-    1,
-    NULL,
+    &taskInputsHandle,
     1  // Core
   );
 
@@ -600,8 +557,8 @@ void loop() {
     joystick.l1y = -static_cast<int16_t>(a[1]);
     joystick.r1x =  static_cast<int16_t>(a[2]);
     joystick.r1y = -static_cast<int16_t>(a[3]);
-    joystick.r2x =  static_cast<int16_t>(a[4]);
-    joystick.r2y = -static_cast<int16_t>(a[5]);
+    joystick.l2x =  static_cast<int16_t>(a[4]);
+    joystick.l2y = -static_cast<int16_t>(a[5]);
     joystick.r2x =  static_cast<int16_t>(a[6]);
     joystick.r2y = -static_cast<int16_t>(a[7]);
     joystick.pot =  static_cast<int16_t>(a[8]);
