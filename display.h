@@ -1,4 +1,6 @@
 #include "HardwareSerial.h"
+#include <string>
+#include <algorithm>
 #include <U8g2lib.h>
 #include <Adafruit_TinyUSB.h>
 
@@ -352,18 +354,18 @@ class DisplayJoystick {
 
     void update(const int32_t *a, const bool *b) {
       count++;
-      if (count == 1) m_joy1.update(a[0], -a[1], b[8]); 
-      if (count == 2) m_joy2.update(a[2], -a[3], b[9]); 
-      if (count == 3) m_joy3.update(a[4], -a[5], b[10]); 
-      if (count == 4) m_joy4.update(a[6], -a[7], b[11]);
-      if (count == 1) m_button1.update(b[0]);
-      if (count == 2) m_button2.update(b[1]);
-      if (count == 3) m_button3.update(b[2]);
-      if (count == 4) m_button4.update(b[3]);
-      if (count == 1) m_button5.update(b[4]);
-      if (count == 2) m_button6.update(b[5]);
-      if (count == 3) m_button7.update(b[6]);
-      if (count == 4) m_button8.update(b[7]);
+      if (count == 1) m_joy1.update(a[0], -a[1], b[3]); 
+      if (count == 2) m_joy2.update(a[2], -a[3], b[4]); 
+      if (count == 3) m_joy3.update(a[4], -a[5], b[5]); 
+      if (count == 4) m_joy4.update(a[6], -a[7], b[6]);
+      if (count == 1) m_button1.update(b[9]);
+      if (count == 2) m_button2.update(b[10]);
+      if (count == 3) m_button3.update(b[11]);
+      if (count == 4) m_button4.update(b[12]);
+      if (count == 1) m_button5.update(b[15]);
+      if (count == 2) m_button6.update(b[16]);
+      if (count == 3) m_button7.update(b[17]);
+      if (count == 4) m_button8.update(b[18]);
 
       if (count == 1) m_axis1.update(a[8]);
 
@@ -371,7 +373,7 @@ class DisplayJoystick {
         m_display->setDrawColor(0);
         m_display->drawBox(0, 112, 64, 8);
         m_display->setDrawColor(1);
-        std::string encpos = std::to_string(a[9]);      
+        std::string encpos = std::to_string(a[21]);      
         m_display->drawStr(0, 120, "Enc: "); m_display->drawStr(24, 120, encpos.c_str());
         m_display->updateDisplayArea(0, 14, 8, 1);
       }
@@ -429,26 +431,26 @@ class DisplayKeyboard {
       count++;
       // Serial.println(count);      
       if (count == 1) m_joy1.update(a[2], -a[3], 0);
-      if (count == 1) m_button1.update(b[9]);
-      if (count == 1) m_button2.update(b[10]);
-      if (count == 1) m_button3.update(b[11]);
+      if (count == 1) m_button1.update(b[4]);
+      if (count == 1) m_button2.update(b[5]);
+      if (count == 1) m_button3.update(b[6]);
       if (count == 2) m_axis1.update(a[6]);
       if (count == 2) m_axis2.update(a[7]);
       if (count == 3) {
-        m_display->setDrawColor(b[0] ? 0 : 1); m_display->drawStr(0, 16, "Hom");
-        m_display->setDrawColor(b[1] ? 0 : 1); m_display->drawStr(0, 24, "Esc");
-        m_display->setDrawColor(b[2] ? 0 : 1); m_display->drawStr(0, 32, "End");
-        m_display->setDrawColor(b[3] ? 0 : 1); m_display->drawStr(0, 40, "Ent");
-        m_display->setDrawColor(b[4] ? 0 : 1); m_display->drawStr(0, 48, "Sft");
-        m_display->setDrawColor(b[5] ? 0 : 1); m_display->drawStr(0, 56, "Ctr");
-        m_display->setDrawColor(b[6] ? 0 : 1); m_display->drawStr(0, 64, "Alt");
+        m_display->setDrawColor(b[ 9] ? 0 : 1); m_display->drawStr(0, 16, "Hom");
+        m_display->setDrawColor(b[10] ? 0 : 1); m_display->drawStr(0, 24, "Esc");
+        m_display->setDrawColor(b[11] ? 0 : 1); m_display->drawStr(0, 32, "End");
+        m_display->setDrawColor(b[12] ? 0 : 1); m_display->drawStr(0, 40, "Ent");
+        m_display->setDrawColor(b[15] ? 0 : 1); m_display->drawStr(0, 48, "Sft");
+        m_display->setDrawColor(b[16] ? 0 : 1); m_display->drawStr(0, 56, "Ctr");
+        m_display->setDrawColor(b[17] ? 0 : 1); m_display->drawStr(0, 64, "Alt");
         m_display->updateDisplayArea(0, 1, 3, 7);
       }
       
       // Determine current matrixf
       uint8_t n = 0;
-      if(abs(a[9]) % 3 == 1) n = 1;
-      else if(abs(a[9]) % 3 == 2) n = 2;
+      if(abs(a[21]) % 3 == 1) n = 1;
+      else if(abs(a[21]) % 3 == 2) n = 2;
       else n = 0;
       // Serial.print(a[9]); Serial.print(" : "); Serial.println(n);   
 

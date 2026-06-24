@@ -9,12 +9,12 @@ typedef struct TU_ATTR_PACKED
   int16_t r2x;        ///< x position of lower right analog-stick
   int16_t r2y;        ///< y position of lower right analog-stick  
   int16_t pot;        ///< potentiometer
-  uint16_t buttons;   ///< Buttons mask for currently pressed buttons
+  uint32_t buttons;   ///< Buttons mask for currently pressed buttons
 }my_hid_report_t;
 
 // Gamepad Report Descriptor Template
 // with 4 joysticks + dial (9 axes of 2 byte each)
-// and 16 buttons of 1 bit each for a total of 2 bytes
+// and 32 buttons of 1 bit each for a total of 2 bytes
 // | L1x | L1y | R1x | R1y | L2X | L2Y | R2X | R2Y | Dial |Button Map |
 #define MY_HID_REPORT_DESC_JOYSTICK(...) \
   HID_USAGE_PAGE ( HID_USAGE_PAGE_DESKTOP     )                 ,\
@@ -44,7 +44,7 @@ typedef struct TU_ATTR_PACKED
       HID_USAGE_MAX    ( 16                                     ) ,\
       HID_LOGICAL_MIN  ( 0                                      ) ,\
       HID_LOGICAL_MAX  ( 1                                      ) ,\
-      HID_REPORT_COUNT ( 16                                     ) ,\
+      HID_REPORT_COUNT ( 32                                     ) ,\
       HID_REPORT_SIZE  ( 1                                      ) ,\
       HID_INPUT        ( HID_DATA | HID_VARIABLE | HID_ABSOLUTE ) ,\
     /* 8 bit Led Controls*/ \
