@@ -20,14 +20,15 @@
 #define QUEUE_SIZE 1
 
 // I2C_ADDR's
-#define SH1107_ADDR   0x3C // Address 0x3C default
-#define ARCADE_ADDR_L 0x3E // Address 0x3A default
-#define ARCADE_ADDR_R 0x3B // Address 0x3A default
-#define ENCODER_ADDR  0x36 // Address 0x36 default
-#define IMU_ADDR      0x2E // Address 0x2E default
+#define SH1107_ADDR    0x3C // Address 0x3C default
+#define ARCADE_ADDR_L  0x49 // Address 0x49 default
+#define ARCADE_ADDR_R  0x4A // Address 0x49 default
+#define ENCODER_ADDR_L 0x36 // Address 0x36 default
+#define ENCODER_ADDR_R 0x37 // Address 0x36 default
+#define IMU_ADDR       0x28 // Address 0x28 default
 
 // SPI_CS's
-#define MCP3208_CS    8    // Chip Select (CS) pin
+#define MCP3208_CS    15    // Chip Select (CS) pin
 
 // Report ID's
 #define MOUSE_ID      0X01
@@ -42,18 +43,19 @@ enum class Source : uint8_t {
     MCP3208,     // 3
     ArcadeLeft,  // 4
     ArcadeRight, // 5
-    Encoder,     // 6
-    Display,     // 7
-    Imu,         // 8
+    EncoderLeft, // 6
+    EncoderRight,// 7
+    Display,     // 8
+    Imu,         // 9
     Count
 };
-static const uint8_t interrupt_pins[(uint8_t)Source::Count] = { 0, 0, 0, 0, 14, 11, 39, 0, 0};
+static const uint8_t interrupt_pins[(uint8_t)Source::Count] = { 0, 0, 0, 0, 18, 13, 38, 39, 0, 0};
 
-static const uint8_t axes_source[] = { 3,  3,  3,  3,  3,  3,  3,  3,  1,  6,  8,  8,  8};
-static const uint8_t axes_pin[]    = { 0,  1,  2,  3,  4,  5,  6,  7, 10,  0,  0,  1,  2};
+static const uint8_t axes_source[] = { 3,  3,  3,  3,  3,  3,  3,  3,  1,  6,  7,  9,  9,  9};
+static const uint8_t axes_pin[]    = { 2,  3,  0,  1,  6,  7,  4,  5,  8,  0,  0,  0,  1,  2};
 static const uint8_t axes_size = sizeof(axes_pin) / sizeof(axes_pin[0]);
-static const uint8_t buttons_source[] = { 0,  0,  0,  0,  0,  0,  0,  2,  2,  4,  4,  4,  4,  4,  4,  5,  5,  5,  5,  5,  5,  6};
-static const uint8_t buttons_pin[]    = { 9,  6,  5, 18, 17, 16, 15, 13, 12, 18, 19, 20,  2, 12, 13, 18, 19, 20,  2, 12, 13, 24};
+static const uint8_t buttons_source[] = { 0,  0,  0,  2,  2,  4,  4,  4,  4,  5,  5,  5,  5,  4,  5,  4,  5,  6,  7};
+static const uint8_t buttons_pin[]    = { 9,  6,  5, 14, 11,  0,  1,  2,  3,  0,  1,  2,  3,  4,  4,  5,  5, 24, 24};
 static const uint8_t buttons_size = sizeof(buttons_pin) / sizeof(buttons_pin[0]);
 static const uint8_t leds_source[] = { 1,  1,  2,  2};
 static const uint8_t leds_pins[]   = {10,  1, 10,  1};
@@ -63,10 +65,12 @@ static const uint8_t led_size = sizeof(leds_pins) / sizeof(leds_pins[0]);
 MCP3208 mcp3208;
 Adafruit_seesaw arcade_left;
 Adafruit_seesaw arcade_right;
-Adafruit_seesaw encoder;
+Adafruit_seesaw encoder_left;
+Adafruit_seesaw encoder_right;
 Display display(SH1107_ADDR);
-seesaw_NeoPixel encoder_pixel = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800);
-Adafruit_BNO055 bno = Adafruit_BNO055(55);
+seesaw_NeoPixel encoder_pixel_left  = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800);
+seesaw_NeoPixel encoder_pixel_right = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800);
+Adafruit_BNO055 bno = Adafruit_BNO055(55, IMU_ADDR);
 
 int touch_threshold = 0;  // if 0 is used, benchmark value is used. Its by default 1,5% change, can be changed by touchSetDefaultThreshold(float percentage)
 bool device_installed[(uint8_t)Source::Count] = {false};
@@ -105,6 +109,7 @@ unsigned long last_display;
 //Interupt callbacks
 void interruptSource(void* arg) {
   int sourceIndex = (int)arg;
+  Serial.print("interrupt: "); Serial.println(sourceIndex);
   interrupt_triggered[sourceIndex] = true;
 }
 
@@ -132,12 +137,14 @@ void taskReadInputs(void *parameter) {
         axis_values[i] = analogRead(axes_pin[i]);
       } else if (axes_source[i] == (uint8_t)Source::MCP3208) {
         axis_values[i] = mcp3208.readADC(axes_pin[i]);
-      } else if (axes_source[i] == (uint8_t)Source::ArcadeLeft  && device_installed[(uint8_t)Source::ArcadeLeft]  ) {
+      } else if (axes_source[i] == (uint8_t)Source::ArcadeLeft  && device_installed[(uint8_t)Source::ArcadeLeft]   && interrupt[(uint8_t)Source::ArcadeLeft]) {
         axis_values[i] = arcade_left.analogRead(axes_pin[i]);
-      } else if (axes_source[i] == (uint8_t)Source::ArcadeRight && device_installed[(uint8_t)Source::ArcadeRight] ) {
+      } else if (axes_source[i] == (uint8_t)Source::ArcadeRight && device_installed[(uint8_t)Source::ArcadeRight]  && interrupt[(uint8_t)Source::ArcadeLeft]) {
         axis_values[i] = arcade_right.analogRead(axes_pin[i]);
-      } else if (axes_source[i] == (uint8_t)Source::Encoder     && device_installed[(uint8_t)Source::Encoder] && interrupt[(uint8_t)Source::Encoder]) {
-        axis_values[i] = encoder.getEncoderPosition();
+      } else if (axes_source[i] == (uint8_t)Source::EncoderLeft && device_installed[(uint8_t)Source::EncoderLeft]  && interrupt[(uint8_t)Source::EncoderLeft]) {
+        axis_values[i] = encoder_left.getEncoderPosition();
+      } else if (axes_source[i] == (uint8_t)Source::EncoderRight && device_installed[(uint8_t)Source::EncoderRight] && interrupt[(uint8_t)Source::EncoderRight]) {
+        axis_values[i] = encoder_right.getEncoderPosition();
       } else if (axes_source[i] == (uint8_t)Source::Imu         && device_installed[(uint8_t)Source::Imu]) {
         if(axes_pin[i] == 0) axis_values[i] = imu_event.orientation.x;
         if(axes_pin[i] == 1) axis_values[i] = imu_event.orientation.y;
@@ -148,9 +155,12 @@ void taskReadInputs(void *parameter) {
     // Normalize axes values to -32767 to 32767 with center at 0 (16 bit) 
     for (uint8_t i = 0; i < axes_size; ++i) {
       if(axes_source[i] == (uint8_t)Source::ADC ||
-         axes_source[i] == (uint8_t)Source::ArcadeLeft ||
-         axes_source[i] == (uint8_t)Source::ArcadeRight) {
+         axes_source[i] == (uint8_t)Source::MCP3208) {
           axis_values[i] = (axis_values[i] - 2048) * 16.0;
+          axis_values[i] = std::clamp(axis_values[i], -32767L, 32767L);
+      } else if(axes_source[i] == (uint8_t)Source::ArcadeLeft ||
+                axes_source[i] == (uint8_t)Source::ArcadeRight) {
+          axis_values[i] = (axis_values[i] - 512) * 64.0;
           axis_values[i] = std::clamp(axis_values[i], -32767L, 32767L);
       }
     }
@@ -171,15 +181,17 @@ void taskReadInputs(void *parameter) {
         arcade_left_mask |= (1UL << buttons_pin[i]);
       } else if (buttons_source[i] == (uint8_t)Source::ArcadeRight && device_installed[(uint8_t)Source::ArcadeRight] && interrupt[(uint8_t)Source::ArcadeRight]) {
         arcade_right_mask |= (1UL << buttons_pin[i]);
-      } else if (buttons_source[i] == (uint8_t)Source::Encoder     && device_installed[(uint8_t)Source::Encoder]     && interrupt[(uint8_t)Source::Encoder]) {
-        button_values[i] = !encoder.digitalRead(buttons_pin[i]);
+      } else if (buttons_source[i] == (uint8_t)Source::EncoderLeft && device_installed[(uint8_t)Source::EncoderLeft] && interrupt[(uint8_t)Source::EncoderLeft]) {
+        button_values[i] = !encoder_left.digitalRead(buttons_pin[i]);
+      } else if (buttons_source[i] == (uint8_t)Source::EncoderRight && device_installed[(uint8_t)Source::EncoderRight] && interrupt[(uint8_t)Source::EncoderRight]) {
+        button_values[i] = !encoder_right.digitalRead(buttons_pin[i]);
       }
     }
     
     if(arcade_left_mask != 0) {
       uint32_t state = arcade_left.digitalReadBulk(arcade_left_mask);
       for (uint8_t i = 0; i < buttons_size; ++i) {
-        if (buttons_source[i] == 1) {
+        if (buttons_source[i] == (uint8_t)Source::ArcadeLeft) {
           button_values[i] = !(state & (1UL << buttons_pin[i]));
         }
       }
@@ -188,7 +200,7 @@ void taskReadInputs(void *parameter) {
     if(arcade_right_mask != 0) {
       uint32_t state = arcade_right.digitalReadBulk(arcade_right_mask);
       for (uint8_t i = 0; i < buttons_size; ++i) {
-        if (buttons_source[i] == 2) {
+        if (buttons_source[i] == (uint8_t)Source::ArcadeRight) {
           button_values[i] = !(state & (1UL << buttons_pin[i]));
         }
       }
@@ -225,7 +237,7 @@ void taskReadInputs(void *parameter) {
     updateHidReports(axis_values, button_values);
 
     // switch modes with debounce
-    if (button_values[buttons_size - 1] && keyboard_mode) {
+    if (button_values[0] && keyboard_mode) {
       Serial.println("Switching to Joystick");
       keyboard_mode = false;
       if(device_installed[(uint8_t)Source::Display]) display.switchMode(0);
@@ -241,7 +253,7 @@ void taskReadInputs(void *parameter) {
       }
       delay(490);
       
-    } else if (button_values[buttons_size - 1]) {
+    } else if (button_values[0]) {
       Serial.println("Switching to Keyboard");
       keyboard_mode = true;
       if(device_installed[(uint8_t)Source::Display]) display.switchMode(1);
@@ -268,8 +280,8 @@ void taskReadInputs(void *parameter) {
     
 
     unsigned long end = millis();
-    Serial.print("  Process Time: "); Serial.println(end - begin);
-    Serial.print("     Loop Time: "); Serial.println(end - last_read);
+    // Serial.print("  Process Time: "); Serial.println(end - begin);
+    // Serial.print("     Loop Time: "); Serial.println(end - last_read);
     last_read = end;
     vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms
   }
@@ -284,8 +296,10 @@ void setLeds() {
       arcade_left.analogWrite(leds_pins[i], leds_values[i]);
     } else if (device_installed[(uint8_t)Source::ArcadeRight] && leds_source[i] == (uint8_t)Source::ArcadeRight) {
       arcade_right.analogWrite(leds_pins[i], leds_values[i]);
-    } else if (device_installed[(uint8_t)Source::Encoder]     && leds_source[i] == (uint8_t)Source::Encoder) {
-      encoder.analogWrite(leds_pins[i], leds_values[i]);
+    } else if (device_installed[(uint8_t)Source::EncoderLeft]  && leds_source[i] == (uint8_t)Source::EncoderLeft) {
+      encoder_left.analogWrite(leds_pins[i], leds_values[i]);
+    } else if (device_installed[(uint8_t)Source::EncoderRight] && leds_source[i] == (uint8_t)Source::EncoderRight) {
+      encoder_right.analogWrite(leds_pins[i], leds_values[i]);
     }
   }
 }
@@ -496,9 +510,6 @@ void setup() {
   // Start serial
   Serial.begin(115200);
 
-  // Allow time for the display to power up and communications to begin
-  delay(1000);
-
   // Set USB Description
   TinyUSBDevice.setID(0xFFFF, 0x0000);
   TinyUSBDevice.setManufacturerDescriptor("Nosille's Stuff");
@@ -540,7 +551,7 @@ void setup() {
     uint16_t pid;
     uint8_t year, mon, day;
     arcade_left.getProdDatecode(&pid, &year, &mon, &day);
-    if (pid != 5296) {
+    if (pid != 5690) {
       Serial.println("Wrong PID for left arcade controller!");
     } else {
        device_installed[(uint8_t)Source::ArcadeLeft] = true;
@@ -554,7 +565,7 @@ void setup() {
     uint16_t pid;
     uint8_t year, mon, day;
     arcade_right.getProdDatecode(&pid, &year, &mon, &day);
-    if (pid != 5296) {
+    if (pid != 5690) {
       Serial.println("Wrong PID for right arcade controller!");
     } else {
       device_installed[(uint8_t)Source::ArcadeRight] = true;
@@ -563,17 +574,31 @@ void setup() {
   }
 
   // Connect to rotary encoder
-  if (! encoder.begin(ENCODER_ADDR) || ! encoder_pixel.begin(ENCODER_ADDR)) {
-    Serial.println("Couldn't find rotary encoder");
+  if (!encoder_left.begin(ENCODER_ADDR_L) || ! encoder_pixel_left.begin(ENCODER_ADDR_L)) {
+    Serial.println("Couldn't find left rotary encoder");
   } else {
     uint16_t pid;
     uint8_t year, mon, day;
-    encoder.getProdDatecode(&pid, &year, &mon, &day);
+    encoder_left.getProdDatecode(&pid, &year, &mon, &day);
     if (pid != 4991) {
-      Serial.println("Wrong PID for rotary encoder!");
+      Serial.println("Wrong PID for left rotary encoder!");
     } else {
-      device_installed[(uint8_t)Source::Encoder] = true;
-      Serial.println("Rotary encoder configured.");
+      device_installed[(uint8_t)Source::EncoderLeft] = true;
+      Serial.println("Left rotary encoder configured.");
+    }
+  }
+
+  if (!encoder_right.begin(ENCODER_ADDR_R) || ! encoder_pixel_right.begin(ENCODER_ADDR_R)) {
+    Serial.println("Couldn't find right rotary encoder");
+  } else {
+    uint16_t pid;
+    uint8_t year, mon, day;
+    encoder_right.getProdDatecode(&pid, &year, &mon, &day);
+    if (pid != 4991) {
+      Serial.println("Wrong PID for right rotary encoder!");
+    } else {
+      device_installed[(uint8_t)Source::EncoderRight] = true;
+      Serial.println("Right rotary encoder configured.");
     }
   }
 
@@ -604,8 +629,10 @@ void setup() {
       arcade_left.pinMode(axes_pin[i], INPUT);
     } else if (axes_source[i] == (uint8_t)Source::ArcadeRight && device_installed[(uint8_t)Source::ArcadeRight]) {
       arcade_right.pinMode(axes_pin[i], INPUT);
-    } else if (axes_source[i] == (uint8_t)Source::Encoder && device_installed[(uint8_t)Source::Encoder]) {
-      encoder.pinMode(axes_pin[i], INPUT);
+    } else if (axes_source[i] == (uint8_t)Source::EncoderLeft && device_installed[(uint8_t)Source::EncoderLeft]) {
+      encoder_left.pinMode(axes_pin[i], INPUT);
+    } else if (axes_source[i] == (uint8_t)Source::EncoderRight && device_installed[(uint8_t)Source::EncoderRight]) {
+      encoder_right.pinMode(axes_pin[i], INPUT);
     }
   }
 
@@ -618,15 +645,18 @@ void setup() {
     if(buttons_source[i] == 0) {
       pinMode(buttons_pin[i], INPUT_PULLUP);
     } else if (buttons_source[i] == (uint8_t)Source::Touch) {
-      touchAttachInterruptArg(buttons_pin[i], [](void* arg) { interruptSource(arg); }, (void*)i, touch_threshold); 
+      touchAttachInterruptArg(buttons_pin[i], [](void* arg) { interruptSource(arg); }, (void*)buttons_source[i], touch_threshold); 
     } else if (buttons_source[i] == (uint8_t)Source::ArcadeLeft && device_installed[(uint8_t)Source::ArcadeLeft]) {
       arcade_left.pinMode(buttons_pin[i], INPUT_PULLUP);
       arcade_left_interrupt_mask |= (1UL << buttons_pin[i]);
     } else if (buttons_source[i] == (uint8_t)Source::ArcadeRight && device_installed[(uint8_t)Source::ArcadeRight]) {
       arcade_right.pinMode(buttons_pin[i], INPUT_PULLUP);
       arcade_right_interrupt_mask |= (1UL << buttons_pin[i]);
-    } else if (buttons_source[i] == (uint8_t)Source::Encoder && device_installed[(uint8_t)Source::Encoder]) {
-      encoder.pinMode(buttons_pin[i], INPUT_PULLUP);
+    } else if (buttons_source[i] == (uint8_t)Source::EncoderLeft && device_installed[(uint8_t)Source::EncoderLeft]) {
+      encoder_left.pinMode(buttons_pin[i], INPUT_PULLUP);
+      encoder_interrupt_mask |= (1UL << buttons_pin[i]);
+    } else if (buttons_source[i] == (uint8_t)Source::EncoderRight && device_installed[(uint8_t)Source::EncoderRight]) {
+      encoder_right.pinMode(buttons_pin[i], INPUT_PULLUP);
       encoder_interrupt_mask |= (1UL << buttons_pin[i]);
     }
   }
@@ -646,14 +676,24 @@ void setup() {
   }
 
   // Setup rotary encoder
-  if (device_installed[(uint8_t)Source::Encoder]) {
-    pinMode(interrupt_pins[(uint8_t)Source::Encoder], INPUT_PULLUP);    
-    attachInterruptArg(digitalPinToInterrupt(interrupt_pins[(uint8_t)Source::Encoder]), 
-                      [](void* arg) { interruptSource(arg); }, (void*)(uint8_t)Source::Encoder, FALLING);     
-    encoder.setGPIOInterrupts(encoder_interrupt_mask, 1);
-    encoder.enableEncoderInterrupt();
-    encoder_pixel.setBrightness(20);
-    encoder_pixel.show();
+  if (device_installed[(uint8_t)Source::EncoderLeft]) {
+    pinMode(interrupt_pins[(uint8_t)Source::EncoderRight], INPUT_PULLUP);    
+    attachInterruptArg(digitalPinToInterrupt(interrupt_pins[(uint8_t)Source::EncoderLeft]), 
+                      [](void* arg) { interruptSource(arg); }, (void*)(uint8_t)Source::EncoderLeft, FALLING);     
+    encoder_left.setGPIOInterrupts(encoder_interrupt_mask, 1);
+    encoder_left.enableEncoderInterrupt();
+    encoder_pixel_left.setBrightness(20);
+    encoder_pixel_left.show();
+  }
+
+  if (device_installed[(uint8_t)Source::EncoderRight]) {
+    pinMode(interrupt_pins[(uint8_t)Source::EncoderRight], INPUT_PULLUP);    
+    attachInterruptArg(digitalPinToInterrupt(interrupt_pins[(uint8_t)Source::EncoderRight]), 
+                      [](void* arg) { interruptSource(arg); }, (void*)(uint8_t)Source::EncoderRight, FALLING);     
+    encoder_right.setGPIOInterrupts(encoder_interrupt_mask, 1);
+    encoder_right.enableEncoderInterrupt();
+    encoder_pixel_left.setBrightness(20);
+    encoder_pixel_left.show();
   }
 
   // Setup IMU
@@ -737,23 +777,28 @@ void loop() {
     last_display = timestamp;      
   }
 
-  if(device_installed[(uint8_t)Source::Encoder]) {
-    encoder_pixel.setPixelColor(0, ColorWheel(a[axes_size - 1] & 0xFF));
-    encoder_pixel.show();
+  if(device_installed[(uint8_t)Source::EncoderLeft]) {
+    encoder_pixel_left.setPixelColor(0, ColorWheel(encoder_pixel_left, a[axes_size - 5] & 0xFF));
+    encoder_pixel_left.show();
+  }
+
+  if(device_installed[(uint8_t)Source::EncoderRight]) {
+    encoder_pixel_right.setPixelColor(0, ColorWheel(encoder_pixel_right, a[axes_size - 4] & 0xFF));
+    encoder_pixel_right.show();
   }
    
   yield();
 }
 
-uint32_t ColorWheel(byte WheelPos) {
+uint32_t ColorWheel(seesaw_NeoPixel &pixel, byte WheelPos) {
   WheelPos = 255 - WheelPos;
   if (WheelPos < 85) {
-    return encoder_pixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    return pixel.Color(255 - WheelPos * 3, 0, WheelPos * 3);
   }
   if (WheelPos < 170) {
     WheelPos -= 85;
-    return encoder_pixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    return pixel.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
   WheelPos -= 170;
-  return encoder_pixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  return pixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }

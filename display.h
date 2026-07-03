@@ -310,6 +310,7 @@ class DisplayJoystick {
     DisplayAxis m_axis1;
     DisplayButton m_button1, m_button2, m_button3, m_button4;
     DisplayButton m_button5, m_button6, m_button7, m_button8;
+    DisplayButton m_button9, m_button10, m_button11, m_button12;
     uint8_t count;
 
   public:
@@ -327,6 +328,10 @@ class DisplayJoystick {
       , m_button6(display, 6, 6, 1, 1)
       , m_button7(display, 7, 7, 1, 1)
       , m_button8(display, 6, 8, 1, 1) 
+      , m_button9(display, 0, 1, 1, 1) 
+      , m_button10(display,7, 1, 1, 1) 
+      , m_button11(display,3, 6, 1, 1) 
+      , m_button12(display,4, 6, 1, 1)       
     {
       m_display = display;
       count = 0;
@@ -335,7 +340,7 @@ class DisplayJoystick {
     void draw() {
       m_display->clearDisplay();      
       m_display->setDrawColor(1);
-      m_display->drawStr(0, 8, "Joystick:");
+      m_display->drawStr(8, 8, "Joystick:");
       m_display->updateDisplayArea(0, 0, 8, 1);        
       m_joy1.draw();
       m_joy2.draw();
@@ -350,22 +355,30 @@ class DisplayJoystick {
       m_button6.draw();
       m_button7.draw();
       m_button8.draw();
+      m_button9.draw();
+      m_button10.draw(); 
+      m_button11.draw();
+      m_button12.draw();            
     }
 
     void update(const int32_t *a, const bool *b) {
       count++;
-      if (count == 1) m_joy1.update(a[0], -a[1], b[3]); 
-      if (count == 2) m_joy2.update(a[2], -a[3], b[4]); 
-      if (count == 3) m_joy3.update(a[4], -a[5], b[5]); 
-      if (count == 4) m_joy4.update(a[6], -a[7], b[6]);
-      if (count == 1) m_button1.update(b[9]);
-      if (count == 2) m_button2.update(b[10]);
-      if (count == 3) m_button3.update(b[11]);
-      if (count == 4) m_button4.update(b[12]);
-      if (count == 1) m_button5.update(b[15]);
-      if (count == 2) m_button6.update(b[16]);
-      if (count == 3) m_button7.update(b[17]);
-      if (count == 4) m_button8.update(b[18]);
+      if (count == 1) m_joy1.update(a[0], -a[1], b[13]); 
+      if (count == 2) m_joy2.update(a[2], -a[3], b[14]); 
+      if (count == 3) m_joy3.update(a[4], -a[5], b[15]); 
+      if (count == 4) m_joy4.update(a[6], -a[7], b[16]);
+      if (count == 1) m_button1.update(b[5]);
+      if (count == 2) m_button2.update(b[6]);
+      if (count == 3) m_button3.update(b[7]);
+      if (count == 4) m_button4.update(b[8]);
+      if (count == 1) m_button5.update(b[9]);
+      if (count == 2) m_button6.update(b[10]);
+      if (count == 3) m_button7.update(b[11]);
+      if (count == 4) m_button8.update(b[12]);
+      if (count == 3) m_button9.update(b[3]);
+      if (count == 4) m_button10.update(b[4]);
+      if (count == 3) m_button11.update(b[17]);
+      if (count == 4) m_button12.update(b[18]);            
 
       if (count == 1) m_axis1.update(a[8]);
 
@@ -373,8 +386,9 @@ class DisplayJoystick {
         m_display->setDrawColor(0);
         m_display->drawBox(0, 112, 64, 8);
         m_display->setDrawColor(1);
-        std::string encpos = std::to_string(a[21]);      
-        m_display->drawStr(0, 120, "Enc: "); m_display->drawStr(24, 120, encpos.c_str());
+        std::string encposl = std::to_string(a[9]);      
+        std::string encposr = std::to_string(a[10]);      
+        m_display->drawStr(0, 120, "Enc: "); m_display->drawStr(24, 120, encposl.c_str()); m_display->drawStr(48, 120, encposr.c_str());
         m_display->updateDisplayArea(0, 14, 8, 1);
       }
       if(count > 3) count = 0;
@@ -526,7 +540,7 @@ class Display{
       m_display.setDrawColor(1);
       std::string timestr = std::to_string(time_current-time_last);
       m_display.drawStr(0, 128, "DT: "); m_display.drawStr(24, 128, timestr.c_str());
-      Serial.print("DT: "); Serial.println(time_current-time_last);
+      // Serial.print("DT: "); Serial.println(time_current-time_last);
       m_display.updateDisplayArea(0, 15, 8, 1);
     }
 };
