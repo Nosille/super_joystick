@@ -40,7 +40,7 @@ class DisplayJoy {
       int32_t point_x = m_x + m_w / 2;
       int32_t point_y = m_y + m_h / 2;
       m_display->drawCircle(point_x, point_y, 2);
-      m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);      
+      delay(0); m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);      
     }
 
     void update(const int32_t &value_x, const int32_t &value_y, const bool &value_b) {
@@ -66,7 +66,7 @@ class DisplayJoy {
       max_x = max_x / 8;
       min_y = min_y / 8;
       max_y = max_y / 8;
-      m_display->updateDisplayArea(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+      delay(0); m_display->updateDisplayArea(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
       last_x = point_x;
       last_y = point_y;
     }
@@ -105,7 +105,7 @@ class DisplayAxis {
       } else {
         m_display->drawBox(m_x + m_w / 2, m_y + 1, 2, m_h - 2);
       }
-      m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);      
+      delay(0); m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);      
     }
     
     void update(const int32_t &value) {
@@ -123,7 +123,7 @@ class DisplayAxis {
         int32_t right = std::max(m_x + m_w / 2 + 1, m_x + m_w / 2 + scaled); 
         m_display->drawBox(left, m_y + 1, right-left, m_h - 2);
       }
-      m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);
+      delay(0); m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);
     }
 };
 
@@ -160,7 +160,7 @@ class DisplayButton {
       m_display->drawBox(m_x , m_y, m_w, m_h);
       m_display->setDrawColor(1);      
       m_display->drawCircle(m_xc, m_yc, m_r);
-      m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);      
+      delay(0); m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);      
     }
 
     void update(const int32_t &value) {
@@ -179,7 +179,7 @@ class DisplayButton {
         
       }
       last_value = value;
-      m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);   
+      delay(0); m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);   
     }
 };
 
@@ -233,7 +233,7 @@ class DisplayKeyMatrix {
           drawKey(i, j);
         }
       }      
-      m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);
+      delay(0); m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);
       last_n = n;
     }
     
@@ -249,13 +249,13 @@ class DisplayKeyMatrix {
       m_display->drawBox(m_x + 8 * last_j, m_y + 8 * last_i, 8, 8);
       m_display->setDrawColor(1);
       drawKey(last_i, last_j);
-      m_display->updateDisplayArea(m_xt + last_j, m_yt + last_i, 1, 1);
+      delay(0); m_display->updateDisplayArea(m_xt + last_j, m_yt + last_i, 1, 1);
       // Highlight new key
       m_display->setDrawColor(1);
       m_display->drawBox(m_x + 8 * key_j, m_y + 8 * key_i, 8, 8);      
       m_display->setDrawColor(0);
       drawKey(key_i, key_j);
-      m_display->updateDisplayArea(m_xt + key_j, m_yt + key_i, 1, 1);
+      delay(0); m_display->updateDisplayArea(m_xt + key_j, m_yt + key_i, 1, 1);
       // Store last key
       last_i = key_i;
       last_j = key_j;
@@ -310,8 +310,8 @@ class DisplayJoystick {
     DisplayAxis m_axis1;
     DisplayButton m_button1, m_button2, m_button3, m_button4;
     DisplayButton m_button5, m_button6, m_button7, m_button8;
-    DisplayButton m_button9, m_button10, m_button11, m_button12;
-    uint8_t count;
+    DisplayButton m_button9, m_button10;
+    DisplayButton m_button11, m_button12, m_button13, m_button14, m_button15, m_button16;
 
   public:
     DisplayJoystick(U8G2 *display)
@@ -330,18 +330,21 @@ class DisplayJoystick {
       , m_button8(display, 6, 8, 1, 1) 
       , m_button9(display, 0, 1, 1, 1) 
       , m_button10(display,7, 1, 1, 1) 
-      , m_button11(display,3, 6, 1, 1) 
-      , m_button12(display,4, 6, 1, 1)       
+      , m_button11(display,3, 1, 1, 1) 
+      , m_button12(display,4, 1, 1, 1)       
+      , m_button13(display,3, 6, 1, 1) 
+      , m_button14(display,4, 6, 1, 1)         
+      , m_button15(display,3, 8, 1, 1) 
+      , m_button16(display,4, 8, 1, 1)         
     {
       m_display = display;
-      count = 0;
     }
 
     void draw() {
       m_display->clearDisplay();      
       m_display->setDrawColor(1);
       m_display->drawStr(8, 8, "Joystick:");
-      m_display->updateDisplayArea(0, 0, 8, 1);        
+      delay(0); m_display->updateDisplayArea(0, 0, 8, 1);        
       m_joy1.draw();
       m_joy2.draw();
       m_joy3.draw();
@@ -358,40 +361,44 @@ class DisplayJoystick {
       m_button9.draw();
       m_button10.draw(); 
       m_button11.draw();
-      m_button12.draw();            
+      m_button12.draw(); 
+      m_button13.draw();
+      m_button14.draw(); 
+      m_button15.draw();
+      m_button16.draw();                        
     }
 
     void update(const int32_t *a, const bool *b) {
-      count++;
-      if (count == 1) m_joy1.update(a[0], -a[1], b[13]); 
-      if (count == 2) m_joy2.update(a[2], -a[3], b[14]); 
-      if (count == 3) m_joy3.update(a[4], -a[5], b[15]); 
-      if (count == 4) m_joy4.update(a[6], -a[7], b[16]);
-      if (count == 1) m_button1.update(b[5]);
-      if (count == 2) m_button2.update(b[6]);
-      if (count == 3) m_button3.update(b[7]);
-      if (count == 4) m_button4.update(b[8]);
-      if (count == 1) m_button5.update(b[9]);
-      if (count == 2) m_button6.update(b[10]);
-      if (count == 3) m_button7.update(b[11]);
-      if (count == 4) m_button8.update(b[12]);
-      if (count == 3) m_button9.update(b[3]);
-      if (count == 4) m_button10.update(b[4]);
-      if (count == 3) m_button11.update(b[17]);
-      if (count == 4) m_button12.update(b[18]);            
+      delay(0); m_joy1.update(a[0], -a[1], b[13]); 
+      delay(0); m_joy2.update(a[2], -a[3], b[14]); 
+      delay(0); m_joy3.update(a[4], -a[5], b[15]); 
+      delay(0); m_joy4.update(a[6], -a[7], b[16]);
+      delay(0); m_button1.update(b[5]);
+      delay(0); m_button2.update(b[6]);
+      delay(0); m_button3.update(b[7]);
+      delay(0); m_button4.update(b[8]);
+      delay(0); m_button5.update(b[9]);
+      delay(0); m_button6.update(b[10]);
+      delay(0); m_button7.update(b[11]);
+      delay(0); m_button8.update(b[12]);
+      delay(0); m_button9.update(b[3]);
+      delay(0); m_button10.update(b[4]);
+      delay(0); m_button11.update(b[17]);
+      delay(0); m_button12.update(b[18]);  
+      delay(0); m_button13.update(b[19]);
+      delay(0); m_button14.update(b[20]); 
+      delay(0); m_button15.update(b[21]);
+      delay(0); m_button16.update(b[22]);                  
 
-      if (count == 1) m_axis1.update(a[8]);
+      delay(0); m_axis1.update(a[8]);
 
-      if (count == 3) { 
-        m_display->setDrawColor(0);
-        m_display->drawBox(0, 112, 64, 8);
-        m_display->setDrawColor(1);
-        std::string encposl = std::to_string(a[9]);      
-        std::string encposr = std::to_string(a[10]);      
-        m_display->drawStr(0, 120, "Enc: "); m_display->drawStr(24, 120, encposl.c_str()); m_display->drawStr(48, 120, encposr.c_str());
-        m_display->updateDisplayArea(0, 14, 8, 1);
-      }
-      if(count > 3) count = 0;
+      m_display->setDrawColor(0);
+      m_display->drawBox(0, 112, 64, 8);
+      m_display->setDrawColor(1);
+      std::string encposl = std::to_string(a[9]);      
+      std::string encposr = std::to_string(a[10]);      
+      m_display->drawStr(0, 120, "Enc: "); m_display->drawStr(24, 120, encposl.c_str()); m_display->drawStr(48, 120, encposr.c_str());
+      delay(0); m_display->updateDisplayArea(0, 14, 8, 1);
     }
 };
 
@@ -402,7 +409,6 @@ class DisplayKeyboard {
     DisplayAxis m_axis1, m_axis2;
     DisplayButton m_button1, m_button2, m_button3;
     DisplayKeyMatrix m_matrix;
-    uint8_t count;    
 
   public:
     DisplayKeyboard(U8G2 *display)
@@ -415,14 +421,13 @@ class DisplayKeyboard {
       , m_matrix(display, 0, 9, 8, 6)
     {
       m_display = display;
-      count = 0;      
     }
 
     void draw() {
       m_display->clearDisplay();      
       m_display->setDrawColor(1);      
       m_display->drawStr(0, 8, "Keyboard:");
-      m_display->updateDisplayArea(0, 0, 8, 1);        
+      delay(0); m_display->updateDisplayArea(0, 0, 8, 1);        
       m_joy1.draw();
       m_axis1.draw();
       m_axis2.draw();
@@ -436,47 +441,40 @@ class DisplayKeyboard {
       m_display->drawStr(0, 48, "Sft");
       m_display->drawStr(0, 56, "Ctr");
       m_display->drawStr(0, 64, "Alt");
-      m_display->updateDisplayArea(0, 1, 3, 7);      
+      delay(0); m_display->updateDisplayArea(0, 1, 3, 7);      
       m_matrix.draw();
     }
 
-    void update(const int32_t *a, const bool *b) {
+    void update(const int *current_matrix, const int32_t *a, const bool *b) {
       // Serial.println("update Keyboard");
-      count++;
-      // Serial.println(count);      
-      if (count == 1) m_joy1.update(a[2], -a[3], 0);
-      if (count == 1) m_button1.update(b[4]);
-      if (count == 1) m_button2.update(b[5]);
-      if (count == 1) m_button3.update(b[6]);
-      if (count == 2) m_axis1.update(a[6]);
-      if (count == 2) m_axis2.update(a[7]);
-      if (count == 3) {
-        m_display->setDrawColor(b[ 9] ? 0 : 1); m_display->drawStr(0, 16, "Hom");
-        m_display->setDrawColor(b[10] ? 0 : 1); m_display->drawStr(0, 24, "Esc");
-        m_display->setDrawColor(b[11] ? 0 : 1); m_display->drawStr(0, 32, "End");
-        m_display->setDrawColor(b[12] ? 0 : 1); m_display->drawStr(0, 40, "Ent");
-        m_display->setDrawColor(b[15] ? 0 : 1); m_display->drawStr(0, 48, "Sft");
-        m_display->setDrawColor(b[16] ? 0 : 1); m_display->drawStr(0, 56, "Ctr");
-        m_display->setDrawColor(b[17] ? 0 : 1); m_display->drawStr(0, 64, "Alt");
-        m_display->updateDisplayArea(0, 1, 3, 7);
-      }
+      delay(0); m_joy1.update(a[2], -a[3], 0);
+      delay(0); m_button1.update(b[14]);
+      delay(0); m_button2.update(b[16]);
+      delay(0); m_button3.update(b[13]);
+      delay(0); m_axis1.update(a[4]);
+      delay(0); m_axis2.update(a[5]);
+      m_display->setDrawColor(b[ 5] ? 0 : 1); m_display->drawStr(0, 16, "Hom");
+      m_display->setDrawColor(b[ 6] ? 0 : 1); m_display->drawStr(0, 24, "Esc");
+      m_display->setDrawColor(b[ 7] ? 0 : 1); m_display->drawStr(0, 32, "End");
+      m_display->setDrawColor(b[ 8] ? 0 : 1); m_display->drawStr(0, 40, "Ent");
+      m_display->setDrawColor(b[ 9] ? 0 : 1); m_display->drawStr(0, 48, "Sft");
+      m_display->setDrawColor(b[10] ? 0 : 1); m_display->drawStr(0, 56, "Ctr");
+      m_display->setDrawColor(b[11] ? 0 : 1); m_display->drawStr(0, 64, "Alt");
+      delay(0); m_display->updateDisplayArea(0, 1, 3, 7);
       
       // Determine current matrixf
       uint8_t n = 0;
-      if(abs(a[21]) % 3 == 1) n = 1;
-      else if(abs(a[21]) % 3 == 2) n = 2;
+      if(abs(*current_matrix) % 3 == 1) n = 1;
+      else if(abs(*current_matrix) % 3 == 2) n = 2;
       else n = 0;
       // Serial.print(a[9]); Serial.print(" : "); Serial.println(n);   
 
       // Caculate joystick position on keyMatrix
-      if (count == 4) {
-        int8_t key_x = static_cast<int8_t>( a[0] * (k_keyCols - 1) * 8 / 2 / 32767);  // characters are 8 pixels wide
-        int8_t key_y = static_cast<int8_t>(-a[1] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are 8 pixels tall
-        uint8_t key_i = (key_y + (k_keyRows) * 8 / 2 ) / 8;
-        uint8_t key_j = (key_x + (k_keyCols) * 8 / 2 ) / 8;
-        m_matrix.update(n, key_i, key_j);
-      }
-      if(count > 3) count = 0;      
+      int8_t key_x = static_cast<int8_t>( a[0] * (k_keyCols - 1) * 8 / 2 / 32767);  // characters are 8 pixels wide
+      int8_t key_y = static_cast<int8_t>(-a[1] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are 8 pixels tall
+      uint8_t key_i = (key_y + (k_keyRows) * 8 / 2 ) / 8;
+      uint8_t key_j = (key_x + (k_keyCols) * 8 / 2 ) / 8;
+      delay(0); m_matrix.update(n, key_i, key_j);
     }
 };
 
@@ -507,7 +505,7 @@ class Display{
       m_display.setDrawColor(1);
       m_display.setFont(u8g2_font_5x8_mf);
       m_display.drawStr(0, 8, "Starting!");
-      m_display.updateDisplay();
+      delay(0); m_display.updateDisplay();
       // TBD splash screen
       delay(1000);
 
@@ -530,8 +528,8 @@ class Display{
       m_displayJoystick.update(a, b);
     }
 
-    void updateKeyboard(const int32_t *a, const bool *b)  {
-      m_displayKeyboard.update(a, b);
+    void updateKeyboard(const int *current_matrix, const int32_t *a, const bool *b)  {
+      m_displayKeyboard.update(current_matrix, a, b);
     }
 
     void updateInfo(const unsigned long &time_current, const unsigned long &time_last) {
@@ -541,6 +539,6 @@ class Display{
       std::string timestr = std::to_string(time_current-time_last);
       m_display.drawStr(0, 128, "DT: "); m_display.drawStr(24, 128, timestr.c_str());
       // Serial.print("DT: "); Serial.println(time_current-time_last);
-      m_display.updateDisplayArea(0, 15, 8, 1);
+      delay(0); m_display.updateDisplayArea(0, 15, 8, 1);
     }
 };
