@@ -109,6 +109,10 @@ uint8_t key_j = 0;     // Current key col
 
 unsigned long last_read;
 unsigned long last_display; 
+const unsigned long kMatrixDebounceMs = 200;
+bool last_matrix_inc = false;
+bool last_matrix_dec = false;
+unsigned long last_matrix_change_ms = 0;
 
 //Interupt callbacks
 void interruptSource(void* arg) {
@@ -424,16 +428,24 @@ void updateHidReports(int32_t *a, bool *b) {
 
     // Determine keyboard matrix mode
     char const (*matrix)[k_keyCols];
-    if(b[0]) {
+    const bool matrix_inc_pressed = b[0];
+    const bool matrix_dec_pressed = b[2];
+    const unsigned long now = millis();
+
+    if (matrix_inc_pressed && !last_matrix_inc &&
+        (now - last_matrix_change_ms) > kMatrixDebounceMs) {
       current_matrix++;
-      delay(100);
+      last_matrix_change_ms = now;
       // Serial.print("current_matrix: "); Serial.println(current_matrix);
-    }
-    else if(b[2]) {
+    } else if (matrix_dec_pressed && !last_matrix_dec &&
+               (now - last_matrix_change_ms) > kMatrixDebounceMs) {
       current_matrix--;
-      delay(100);
+      last_matrix_change_ms = now;
       // Serial.print("current_matrix: "); Serial.println(current_matrix);      
     }
+
+    last_matrix_inc = matrix_inc_pressed;
+    last_matrix_dec = matrix_dec_pressed;
     
     if(current_matrix % 3 == 1){
       matrix = k_keyMatrix_L2;
@@ -868,4 +880,4 @@ uint32_t ColorWheel(seesaw_NeoPixel &pixel, byte WheelPos) {
   }
   WheelPos -= 170;
   return pixel.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
+}
