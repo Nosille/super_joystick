@@ -52,9 +52,9 @@ enum class Source : uint8_t {
 };
 static const uint8_t interrupt_pins[(uint8_t)Source::Count] = { 0, 0, 0, 0, 18, 13, 38, 39, 0, 0};
 
-static const uint8_t axes_source[] = { 3,  3,  3,  3,  3,  3,  3,  3,  1,  6,  7,  9,  9,  9};
-static const int8_t  axes_scale[]  = {16, 16,-16,-16, 16, 16,-16,-16,-16,  1,  1,  1,  1,  1};
-static const uint8_t axes_pin[]    = { 2,  3,  0,  1,  6,  7,  4,  5,  8,  0,  0,  0,  1,  2};
+static const uint8_t axes_source[] = { 3,  3,  3,  3,  3,  3,  3,  3,  1,  6,  7,  9,  9,  9,  9,  9,  9};
+static const int8_t  axes_scale[]  = {16, 16,-16,-16, 16, 16,-16,-16,-16,  1,  1,-100,100,100,  1,  1,  1};
+static const uint8_t axes_pin[]    = { 2,  3,  0,  1,  6,  7,  4,  5,  8,  0,  0,  0,  1,  2,  3,  4,  5};
 static const uint8_t axes_size = sizeof(axes_pin) / sizeof(axes_pin[0]);
 static const uint8_t buttons_source[] = { 0,  0,  0,  2,  2,  4,  4,  4,  4,  5,  5,  5,  5,  4,  5,  4,  5,  4,  5,  4,  5,  6,  7};
 static const uint8_t buttons_pin[]    = { 9,  6,  5, 14, 11,  0,  1,  2,  3,  0,  1,  2,  3,  4,  4,  5,  5, 14, 14, 15, 15, 24, 24};
@@ -88,6 +88,7 @@ uint8_t const desc_hid_report[] = {
 
 Adafruit_USBD_HID usb_hid;
 TaskHandle_t taskInputsHandle = NULL;
+TaskHandle_t taskReportHandle = NULL;
 
 // Queues
 QueueHandle_t queueAxes = NULL;
@@ -99,7 +100,21 @@ int32_t axis_values[axes_size] = {0};
 bool button_values[buttons_size] = {false};
 int8_t leds_values[led_size]  = {32}; // current brightness of leds, 0 to 255
 bool keyboard_mode = false;
-int8_t has_keys = 0;  // If keys were sent in last hid report
+
+// HID report pending mechanism
+// Mouse report
+uint8_t mouse_buttons = 0;
+int8_t mouse_x = 0, mouse_y = 0, mouse_v = 0, mouse_h = 0;
+bool mouse_needs_send = false;
+
+// Keyboard report
+uint8_t keyboard_modifier = 0;
+uint8_t keyboard_keys[6] = {0};
+bool keyboard_release_pending = false;
+
+// Joystick reports
+my_joystick_report_t joystick1 = {0}, joystick2 = {0};
+bool joystick1_needs_send= false, joystick2_needs_send = false;
 
 int current_matrix = 0;
 int8_t key_x = 0;      // Current keyboard position
@@ -134,9 +149,17 @@ void taskReadInputs(void *parameter) {
     }
 
     // Read Imu data
-    sensors_event_t imu_event;
+    double x, y, z, rx, ry, rz;
     if(device_installed[(uint8_t)Source::Imu]) {
-      bno.getEvent(&imu_event);
+      sensors_event_t event_euler, event_gyro;
+      bno.getEvent(&event_euler, Adafruit_BNO055::VECTOR_EULER);
+      bno.getEvent(&event_gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
+      x = event_euler.orientation.y;
+      y = event_euler.orientation.z;
+      z = event_euler.orientation.x; if (z > 180.0) z -= 360.0;
+      rx = event_gyro.gyro.y;
+      ry = event_gyro.gyro.z;
+      rz = event_gyro.gyro.x;
     }
 
     // Read axes values from sources
@@ -147,16 +170,19 @@ void taskReadInputs(void *parameter) {
         axis_values[i] = mcp3208.readADC(axes_pin[i]);
       } else if (axes_source[i] == (uint8_t)Source::ArcadeLeft  && device_installed[(uint8_t)Source::ArcadeLeft]   && interrupt[(uint8_t)Source::ArcadeLeft]) {
         axis_values[i] = arcade_left.analogRead(axes_pin[i]);
-      } else if (axes_source[i] == (uint8_t)Source::ArcadeRight && device_installed[(uint8_t)Source::ArcadeRight]  && interrupt[(uint8_t)Source::ArcadeLeft]) {
+      } else if (axes_source[i] == (uint8_t)Source::ArcadeRight && device_installed[(uint8_t)Source::ArcadeRight]  && interrupt[(uint8_t)Source::ArcadeRight]) {
         axis_values[i] = arcade_right.analogRead(axes_pin[i]);
       } else if (axes_source[i] == (uint8_t)Source::EncoderLeft && device_installed[(uint8_t)Source::EncoderLeft]  && interrupt[(uint8_t)Source::EncoderLeft]) {
         axis_values[i] = -encoder_left.getEncoderPosition();
       } else if (axes_source[i] == (uint8_t)Source::EncoderRight && device_installed[(uint8_t)Source::EncoderRight] && interrupt[(uint8_t)Source::EncoderRight]) {
         axis_values[i] = -encoder_right.getEncoderPosition();
       } else if (axes_source[i] == (uint8_t)Source::Imu         && device_installed[(uint8_t)Source::Imu]) {
-        if(axes_pin[i] == 0) axis_values[i] = imu_event.orientation.x;
-        if(axes_pin[i] == 1) axis_values[i] = imu_event.orientation.y;
-        if(axes_pin[i] == 2) axis_values[i] = imu_event.orientation.z;
+        if(axes_pin[i] == 0) { axis_values[i] = x  * axes_scale[i]; }
+        if(axes_pin[i] == 1) { axis_values[i] = y  * axes_scale[i]; }
+        if(axes_pin[i] == 2) { axis_values[i] = z  * axes_scale[i]; }
+        if(axes_pin[i] == 3) { axis_values[i] = rx * axes_scale[i]; }
+        if(axes_pin[i] == 4) { axis_values[i] = ry * axes_scale[i]; }
+        if(axes_pin[i] == 5) { axis_values[i] = rz * axes_scale[i]; }
       }
     }
 
@@ -222,28 +248,6 @@ void taskReadInputs(void *parameter) {
     xQueueOverwrite(queueAxes, &axis_values);
     xQueueOverwrite(queueButtons, &button_values);
 
-    // #ifdef TINYUSB_NEED_POLLING_TASK
-    // // Manual call tud_task since it isn't called by Core's background
-    // TinyUSBDevice.task();
-    // #endif
-
-    // not enumerated()/mounted() yet: nothing to do
-    if (!TinyUSBDevice.mounted()) {
-      vTaskDelay(10 / portTICK_PERIOD_MS);
-      continue;
-    }
-
-    // Remote wakeup
-    if ( TinyUSBDevice.suspended() && (button_values[3] || button_values[4] || button_values[5] || button_values[6] || button_values[7] || button_values[8]) )
-    {
-      // Wake up host if we are in suspend mode
-      // and REMOTE_WAKEUP feature is enabled by host
-      TinyUSBDevice.remoteWakeup();
-    }
-
-    // Update HID reports
-    updateHidReports(axis_values, button_values);
-
     // switch modes with debounce
     if (button_values[1] && keyboard_mode) {
       Serial.println("Switching to Joystick");
@@ -251,16 +255,13 @@ void taskReadInputs(void *parameter) {
       delay(100);
       if(device_installed[(uint8_t)Source::Display]) display.switchMode(0);
 
-      if(usb_hid.ready()) {
-        usb_hid.mouseReport(MOUSE_ID, 0, 0, 0, 0, 0);
-      }
-      delay(10);
-
-      if(usb_hid.ready() && has_keys) {    
-        usb_hid.keyboardRelease(KEYBOARD_ID);
-        has_keys = false;
-      }
-      delay(390);
+      mouse_x = 0;
+      mouse_y = 0;
+      mouse_v = 0;
+      mouse_h = 0;
+      mouse_buttons = 0;
+      mouse_needs_send = true;
+      delay(400);
       
     } else if (button_values[1]) {
       Serial.println("Switching to Keyboard");
@@ -268,38 +269,30 @@ void taskReadInputs(void *parameter) {
       delay(100);
       if(device_installed[(uint8_t)Source::Display]) display.switchMode(1);
 
-      my_hid_report_t joystick1;
-      joystick1.l1x = 0.0;
-      joystick1.l1y = 0.0;
-      joystick1.r1x = 0.0;
-      joystick1.r1y = 0.0;
-      joystick1.l2x = 0.0;
-      joystick1.l2y = 0.0;
-      joystick1.r2x = 0.0;
-      joystick1.r2y = 0.0;
-      joystick1.pot = 0.0;
+      joystick1.x = 0.0;
+      joystick1.y = 0.0;
+      joystick1.z = 0.0;
+      joystick1.rx = 0.0;
+      joystick1.ry = 0.0;
+      joystick1.rz = 0.0;
+      joystick1.slider = 0.0;
+      joystick1.dial = 0.0;
+      joystick1.wheel = 0.0;
       joystick1.buttons = 0; 
-      
-      if(usb_hid.ready()) {  
-        usb_hid.sendReport(JOYSTICK1_ID, &joystick1, sizeof(joystick1));  
-      }
-      delay(10);
+      joystick1_needs_send = true;
 
-      my_hid_report_t joystick2;
-      joystick2.l1x = 0.0;
-      joystick2.l1y = 0.0;
-      joystick2.r1x = 0.0;
-      joystick2.r1y = 0.0;
-      joystick2.l2x = 0.0;
-      joystick2.l2y = 0.0;
-      joystick2.r2x = 0.0;
-      joystick2.r2y = 0.0;
-      joystick2.pot = 0.0;
+      joystick2.x = 0.0;
+      joystick2.y = 0.0;
+      joystick2.z = 0.0;
+      joystick2.rx = 0.0;
+      joystick2.ry = 0.0;
+      joystick2.rz = 0.0;
+      joystick2.slider = 0.0;
+      joystick2.dial = 0.0;
+      joystick2.wheel = 0.0;
       joystick2.buttons = 0; 
-      if(usb_hid.ready()) {  
-        usb_hid.sendReport(JOYSTICK2_ID, &joystick2, sizeof(joystick2));  
-      }
-      delay(390);
+      joystick2_needs_send = true;
+      delay(400);
     }
 
     xQueueOverwrite(queueMode, &keyboard_mode);
@@ -308,6 +301,36 @@ void taskReadInputs(void *parameter) {
     // Serial.print("  Process Time: "); Serial.println(end - begin);
     // Serial.print("     Loop Time: "); Serial.println(end - last_read);
     last_read = end;
+    vTaskDelay(5 / portTICK_PERIOD_MS);  // 5ms
+  }
+}
+
+void taskProcessHid(void *parameter) {
+  for (;;) {
+    if (joystick1_needs_send && usb_hid.ready()) {
+      usb_hid.sendReport(JOYSTICK1_ID, &joystick1, sizeof(joystick1));
+      joystick1_needs_send = false;
+    }
+    
+    if (joystick2_needs_send && usb_hid.ready()) {
+      usb_hid.sendReport(JOYSTICK2_ID, &joystick2, sizeof(joystick2));
+      joystick2_needs_send = false;
+    }
+
+    if (mouse_needs_send && usb_hid.ready()) {
+      usb_hid.mouseReport(MOUSE_ID, mouse_buttons, mouse_x, mouse_y, mouse_v, mouse_h);
+      mouse_needs_send = false;
+    }
+    
+    if (keyboard_keys[0] > 0 && usb_hid.ready()) {
+      Serial.println("sending keys");
+      usb_hid.keyboardReport(KEYBOARD_ID, keyboard_modifier, keyboard_keys);
+      keyboard_release_pending = true;
+    } else if (keyboard_release_pending && usb_hid.ready()) {
+      Serial.println("sending release");
+      usb_hid.keyboardRelease(KEYBOARD_ID);
+      keyboard_release_pending = false;
+    }
     vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms
   }
 }
@@ -392,38 +415,57 @@ void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
 }
 
 void updateHidReports(int32_t *a, bool *b) {
+  // #ifdef TINYUSB_NEED_POLLING_TASK
+  // // Manual call tud_task since it isn't called by Core's background
+  // TinyUSBDevice.task();
+  // #endif
+
+  // not enumerated()/mounted() yet: nothing to do
+  if (!TinyUSBDevice.mounted()) {
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+    return;
+  }
+
+  // Remote wakeup
+  if ( TinyUSBDevice.suspended() && (button_values[3] || button_values[4] || button_values[5] || button_values[6] || button_values[7] || button_values[8]) )
+  {
+    // Wake up host if we are in suspend mode
+    // and REMOTE_WAKEUP feature is enabled by host
+    TinyUSBDevice.remoteWakeup();
+  }
+  
   // Update active report
   // Keyboard Mode
   if (keyboard_mode) {
     // Serial.println("Keyboard mode");
-    // Mouse report
-    if (usb_hid.ready()) {
-      int8_t mouse_x =  static_cast<int8_t>(a[2]/1028);
-      int8_t mouse_y = -static_cast<int8_t>(a[3]/1028);
-      int8_t mouse_h =  static_cast<int8_t>(a[4]/4096);
-      int8_t mouse_v =  static_cast<int8_t>(a[5]/4096);
+    // populate pending mousedata
+    {
+      int8_t mx =  static_cast<int8_t>(a[2]/2048);
+      int8_t my = -static_cast<int8_t>(a[3]/2048);
+      int8_t mh =  static_cast<int8_t>(a[4]/4096);
+      int8_t mv =  static_cast<int8_t>(a[5]/4096);
 
-      if (mouse_x < 2 && mouse_x > -2) mouse_x = 0;
-      if (mouse_y < 2 && mouse_y > -2) mouse_y = 0;   
-      if (mouse_h < 1 && mouse_h > -1) mouse_h = 0;
-      if (mouse_v < 1 && mouse_v > -1) mouse_v = 0;       
+      if (mx < 2 && mx > -2) mx = 0;
+      if (my < 2 && my > -2) my = 0;   
+      if (mh < 1 && mh > -1) mh = 0;
+      if (mv < 1 && mv > -1) mv = 0;       
 
-      if (mouse_x < -127) mouse_x = -127; if (mouse_x > 127) mouse_x = 127;
-      if (mouse_y < -127) mouse_y = -127; if (mouse_y > 127) mouse_y = 127;    
-      if (mouse_h < -127) mouse_h = -127; if (mouse_h > 127) mouse_h = 127;
-      if (mouse_v < -127) mouse_v = -127; if (mouse_v > 127) mouse_v = 127;    
+      if (mx < -127) mx = -127; if (mx > 127) mx = 127;
+      if (my < -127) my = -127; if (my > 127) my = 127;    
+      if (mh < -127) mh = -127; if (mh > 127) mh = 127;
+      if (mv < -127) mv = -127; if (mv > 127) mv = 127;    
       
-      uint8_t buttons  =  ( b[14] << 0) 
-                        | ( b[13] << 1) 
-                        | ( b[16] << 2) 
-                        // | ( b[21]       << 3)
-                        // | ( b[22]       << 4)
-                        ;
-      // send mouse report
-      usb_hid.mouseReport(MOUSE_ID, buttons, mouse_x, mouse_y, mouse_v, mouse_h);
-      delay(10); // delay before trying keyboard report
-    }  else {
-      Serial.println("Mouse not ready!");
+      mouse_x = mx;
+      mouse_y = my;
+      mouse_h = mh;
+      mouse_v = mv;
+      mouse_buttons = ( b[14] << 0) 
+                    | ( b[13] << 1) 
+                    | ( b[16] << 2) 
+                    // | ( b[21]       << 3)
+                    // | ( b[22]       << 4)
+                    ;
+      mouse_needs_send = true;
     }
 
     // Determine keyboard matrix mode
@@ -455,86 +497,84 @@ void updateHidReports(int32_t *a, bool *b) {
       matrix = k_keyMatrix_L1;
     }
     
-    // Keyboard report
-    if (usb_hid.ready()) {
-      // Caculate joystick position on keyMatrix
-      key_x = static_cast<int8_t>( a[0] * (k_keyCols - 1) * 8 / 2 / 32767);  // characters are on an 8x8 pixel grid
-      key_y = static_cast<int8_t>(-a[1] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are on an 8x8 pixel grid
-      key_i = (key_y + (k_keyRows) * 8 / 2 ) / 8;
-      key_j = (key_x + (k_keyCols) * 8 / 2 ) / 8;
+    // populate pending keyboard data
+    // Calculate joystick position on keyMatrix
+    key_x = static_cast<int8_t>( a[0] * (k_keyCols - 1) * 8 / 2 / 32767);  // characters are on an 8x8 pixel grid
+    key_y = static_cast<int8_t>(-a[1] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are on an 8x8 pixel grid
+    key_i = (key_y + (k_keyRows) * 8 / 2 ) / 8;
+    key_j = (key_x + (k_keyCols) * 8 / 2 ) / 8;
 
-      int count = 0;
-      uint8_t modifier = 0;
-      uint8_t keys[6] = { 0 }; // Be careful not to exceed the report limit of 6 keys
-      
-      // Capture matrix key if button pressed 
-      if (b[12]) {
-        modifier      = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
-        keys[count++] = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][1];
-      }
+    uint8_t modifier = 0;
+    std::vector<uint8_t> keys;
+    keys.reserve(6);  // Reserve space for up to 6 keys
+    
+    // Capture matrix key if button pressed 
+    if (b[12]) {
+      modifier      = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
+      keys.push_back(k_ascii2hid[(uint8_t)matrix[key_i][key_j]][1]);
+    }
 
-      // direct button keys
-      if (b[9]) {
-        if(count < 6) keys[count++] = HID_KEY_SHIFT_LEFT;
-      }
-      if (b[10]) {
-        if(count < 6) keys[count++] = HID_KEY_CONTROL_LEFT;
-      }
-      if (b[11]) {
-        if(count < 6) keys[count++] = HID_KEY_ALT_LEFT;
-      }
-      if (b[5]) {
-        if(count < 6) keys[count++] = HID_KEY_HOME;
-      }
-      if (b[6]) {
-        if(count < 6) keys[count++] = HID_KEY_ESCAPE;
-      }
-      if (b[7]) {
-        if(count < 6) keys[count++] = HID_KEY_END;
-      }
-      if (b[8]) {
-        if(count < 6) keys[count++] = HID_KEY_ENTER;
-      }
-      if (b[15]) {
-        if(count < 6) keys[count++] = HID_KEY_GUI_LEFT;
-      }
-      if (a[7] > 15000) {
-        if(count < 6) keys[count++] = HID_KEY_ARROW_UP;
-      } else if (a[6] >  15000) {
-        if(count < 6) keys[count++] = HID_KEY_ARROW_RIGHT;
-      } else if (a[7] < -15000) {
-        if(count < 6) keys[count++] = HID_KEY_ARROW_DOWN;
-      } else if (a[6] < -15000) {
-        if(count < 6) keys[count++] = HID_KEY_ARROW_LEFT;
-      }
+    // direct button keys
+    if (b[9]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_SHIFT_LEFT);
+    }
+    if (b[10]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_CONTROL_LEFT);
+    }
+    if (b[11]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_ALT_LEFT);
+    }
+    if (b[5]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_HOME);
+    }
+    if (b[6]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_ESCAPE);
+    }
+    if (b[7]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_END);
+    }
+    if (b[8]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_ENTER);
+    }
+    if (b[15]) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_GUI_LEFT);
+    }
+    if (a[7] > 15000) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_ARROW_UP);
+    } else if (a[6] >  15000) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_ARROW_RIGHT);
+    } else if (a[7] < -15000) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_ARROW_DOWN);
+    } else if (a[6] < -15000) {
+      if(keys.size() < 6) keys.push_back(HID_KEY_ARROW_LEFT);
+    }
 
-      // Send keyboard report
-      if(count > 0) {
-        usb_hid.keyboardReport(KEYBOARD_ID, modifier, keys);
-        has_keys = true;
-      } else if (has_keys) {
-        // send empty key report if previously has key pressed
-        usb_hid.keyboardRelease(KEYBOARD_ID);
-        has_keys = false;
+    // reset keyboard report
+    keyboard_modifier = 0;
+    for (auto& key : keyboard_keys) {
+      key = 0;
+    }
+    // update report with new keys
+    if(keys.size() > 0) {
+      keyboard_modifier = modifier;
+      for (size_t i = 0; i < keys.size(); i++) {
+        keyboard_keys[i] = keys[i];
       }
-    } else {
-      Serial.println("Keyboard not ready!");
     }
 
 
   // Joystick mode
   } else { 
-    // Serial.println("Joystick Mode");
-    my_hid_report_t joystick1, joystick2;
-    joystick1.l1x =  static_cast<int16_t>(a[0]);
-    joystick1.l1y = -static_cast<int16_t>(a[1]);
-    joystick1.r1x =  static_cast<int16_t>(a[2]);
-    joystick1.r1y = -static_cast<int16_t>(a[3]);
-    joystick1.l2x =  static_cast<int16_t>(a[4]);
-    joystick1.l2y = -static_cast<int16_t>(a[5]);
-    joystick1.r2x =  static_cast<int16_t>(a[6]);
-    joystick1.r2y = -static_cast<int16_t>(a[7]);
-    joystick1.pot =  static_cast<int16_t>(a[8]);
+    // Store joystick1 data for later sending via callback
+    joystick1.x      =  static_cast<int16_t>(a[0]);
+    joystick1.y      = -static_cast<int16_t>(a[1]);
+    joystick1.z      =  static_cast<int16_t>(a[2]);
+    joystick1.rx     = -static_cast<int16_t>(a[3]);
+    joystick1.ry     =  static_cast<int16_t>(a[4]);
+    joystick1.rz     = -static_cast<int16_t>(a[5]);
+    joystick1.slider =  static_cast<int16_t>(a[6]);
+    joystick1.dial   = -static_cast<int16_t>(a[7]);
+    joystick1.wheel  =  static_cast<int16_t>(a[8]);
     // store buttons
     joystick1.buttons = ( b[0] << 0) 
                       | ( b[1] << 1) 
@@ -556,32 +596,28 @@ void updateHidReports(int32_t *a, bool *b) {
                       | ( b[17] << 17)
                       | ( b[18] << 18)
                       | ( b[19] << 19)
-                      | ( b[20] << 20)
-                      | ( b[21] << 21)
-                      | ( b[22] << 22)                      
+                      | ( b[20] << 20)                     
                       ;
 
-    // Send joystick report
-    if (usb_hid.ready()) {
-      usb_hid.sendReport(JOYSTICK1_ID, &joystick1, sizeof(joystick1));  
-    } else {
-      Serial.println("Joystick1 not ready!");
-    }
+    // Flag joystick1 for pending send
+    joystick1_needs_send = true;
 
-    joystick2.l1x =  static_cast<int16_t>(a[11]);
-    joystick2.l1y =  static_cast<int16_t>(a[12]);
-    joystick2.l1x =  static_cast<int16_t>(a[13]);
-    joystick2.l1y =  static_cast<int16_t>(a[9]);
-    joystick2.l1x =  static_cast<int16_t>(a[10]);    
+    // Store joystick2 data for later sending via callback
+    joystick2.x      =  static_cast<int16_t>(a[11]);
+    joystick2.y      =  static_cast<int16_t>(a[12]);
+    joystick2.z      =  static_cast<int16_t>(a[13]);
+    joystick2.rx     =  static_cast<int16_t>(a[14]);
+    joystick2.ry     =  static_cast<int16_t>(a[15]);
+    joystick2.rz     =  static_cast<int16_t>(a[16]);
+    joystick2.slider =  static_cast<int16_t>(a[9]);
+    joystick2.dial   =  static_cast<int16_t>(a[10]);
+    joystick2.wheel  =  0;
 
-    joystick2.buttons = 0; 
+    joystick2.buttons = ( b[21] << 21)
+                      | ( b[22] << 22) 
+                      ;
 
-    delay(1);
-    if (usb_hid.ready()) {
-      usb_hid.sendReport(JOYSTICK2_ID, &joystick2, sizeof(joystick2));  
-    } else {
-      Serial.println("Joystick2 not ready!");
-    }
+    joystick2_needs_send = true;  // Flag that joystick2 needs to be sent
   }    
 }
 
@@ -756,7 +792,7 @@ void setup() {
 
   // Setup rotary encoder
   if (device_installed[(uint8_t)Source::EncoderLeft]) {
-    pinMode(interrupt_pins[(uint8_t)Source::EncoderRight], INPUT_PULLUP);    
+    pinMode(interrupt_pins[(uint8_t)Source::EncoderLeft], INPUT_PULLUP);    
     attachInterruptArg(digitalPinToInterrupt(interrupt_pins[(uint8_t)Source::EncoderLeft]), 
                       [](void* arg) { interruptSource(arg); }, (void*)(uint8_t)Source::EncoderLeft, FALLING);     
     encoder_left.setGPIOInterrupts(encoder_interrupt_mask, 1);
@@ -771,8 +807,8 @@ void setup() {
                       [](void* arg) { interruptSource(arg); }, (void*)(uint8_t)Source::EncoderRight, FALLING);     
     encoder_right.setGPIOInterrupts(encoder_interrupt_mask, 1);
     encoder_right.enableEncoderInterrupt();
-    encoder_pixel_left.setBrightness(20);
-    encoder_pixel_left.show();
+    encoder_pixel_right.setBrightness(20);
+    encoder_pixel_right.show();
   }
 
   // Setup IMU
@@ -817,6 +853,16 @@ void setup() {
     1  // Core
   );
 
+  xTaskCreatePinnedToCore(
+    taskProcessHid,
+    "hidTask",
+    2000,  // Task stack
+    NULL,
+    1,
+    &taskReportHandle,
+    1  // Core
+  );
+
   last_display = millis();
   Serial.println("Setup complete!");
 }
@@ -828,6 +874,7 @@ void loop() {
   if (!xQueueReceive(queueAxes, &a, portMAX_DELAY)) {
     Serial.println("Failed to get Axes from queue.");
   }
+
   // get buttons
   // Serial.println("Get buttons");
   bool b[buttons_size] = {false};
@@ -839,8 +886,12 @@ void loop() {
   bool mode = false;
   if (!xQueueReceive(queueMode, &mode, portMAX_DELAY)) {
     Serial.println("Failed to get Mode from queue.");
-  }  
+  }
 
+  // Update HID reports
+  updateHidReports(a, b);
+
+  // Update display
   if(device_installed[(uint8_t)Source::Display]) {
     if (mode) {
       display.updateKeyboard(&current_matrix, a, b);
@@ -856,15 +907,15 @@ void loop() {
     last_display = timestamp;      
   }
 
-  if(device_installed[(uint8_t)Source::EncoderLeft]) {
-    encoder_pixel_left.setPixelColor(0, ColorWheel(encoder_pixel_left, a[axes_size - 5] & 0xFF));
-    encoder_pixel_left.show();
-  }
+  // if(device_installed[(uint8_t)Source::EncoderLeft]) {
+  //   encoder_pixel_left.setPixelColor(0, ColorWheel(encoder_pixel_left, a[axes_size - 5] & 0xFF));
+  //   encoder_pixel_left.show();
+  // }
 
-  if(device_installed[(uint8_t)Source::EncoderRight]) {
-    encoder_pixel_right.setPixelColor(0, ColorWheel(encoder_pixel_right, a[axes_size - 4] & 0xFF));
-    encoder_pixel_right.show();
-  }
+  // if(device_installed[(uint8_t)Source::EncoderRight]) {
+  //   encoder_pixel_right.setPixelColor(0, ColorWheel(encoder_pixel_right, a[axes_size - 4] & 0xFF));
+  //   encoder_pixel_right.show();
+  // }
    
   yield();
 }
