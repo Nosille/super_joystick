@@ -52,9 +52,9 @@ enum class Source : uint8_t {
 };
 static const uint8_t interrupt_pins[(uint8_t)Source::Count] = { 0, 0, 0, 0, 18, 13, 38, 39, 0, 0};
 
-static const uint8_t axes_source[] = { 3,  3,  3,  3,  3,  3,  3,  3,  1,  6,  7,  9,  9,  9,  9,  9,  9};
-static const int8_t  axes_scale[]  = {16, 16,-16,-16, 16, 16,-16,-16,-16,  1,  1,-100,100,100,  1,  1,  1};
-static const uint8_t axes_pin[]    = { 2,  3,  0,  1,  6,  7,  4,  5,  8,  0,  0,  0,  1,  2,  3,  4,  5};
+static const uint8_t axes_source[] = { 3,  3,  3,  3,  3,  3,  3,  3,  1,  6,  7,   9,  9,  9,    9,   9,   9};
+static const int16_t axes_scale[]  = {16, 16,-16,-16, 16, 16,-16,-16,-16,  1,  1,-100,100,100,-1000,1000,1000};
+static const uint8_t axes_pin[]    = { 2,  3,  0,  1,  6,  7,  4,  5,  8,  0,  0,   0,  1,  2,    3,   4,   5};
 static const uint8_t axes_size = sizeof(axes_pin) / sizeof(axes_pin[0]);
 static const uint8_t buttons_source[] = { 0,  0,  0,  2,  2,  4,  4,  4,  4,  5,  5,  5,  5,  4,  5,  4,  5,  4,  5,  4,  5,  6,  7};
 static const uint8_t buttons_pin[]    = { 9,  6,  5, 14, 11,  0,  1,  2,  3,  0,  1,  2,  3,  4,  4,  5,  5, 14, 14, 15, 15, 24, 24};
@@ -158,8 +158,8 @@ void taskReadInputs(void *parameter) {
       y = event_euler.orientation.z;
       z = event_euler.orientation.x; if (z > 180.0) z -= 360.0;
       rx = event_gyro.gyro.y;
-      ry = event_gyro.gyro.z;
-      rz = event_gyro.gyro.x;
+      ry = event_gyro.gyro.x;
+      rz = event_gyro.gyro.z;
     }
 
     // Read axes values from sources
@@ -900,12 +900,12 @@ void loop() {
     }
   }
 
-  // display info
-  if(device_installed[(uint8_t)Source::Display]) {
-    unsigned long timestamp = millis(); 
-    display.updateInfo(timestamp, last_display);
-    last_display = timestamp;      
-  }
+  // // display info
+  // if(device_installed[(uint8_t)Source::Display]) {
+  //   unsigned long timestamp = millis(); 
+  //   display.updateInfo(timestamp, last_display);
+  //   last_display = timestamp;      
+  // }
 
   // if(device_installed[(uint8_t)Source::EncoderLeft]) {
   //   encoder_pixel_left.setPixelColor(0, ColorWheel(encoder_pixel_left, a[axes_size - 5] & 0xFF));
