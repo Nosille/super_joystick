@@ -323,11 +323,9 @@ void taskProcessHid(void *parameter) {
     }
     
     if (keyboard_keys[0] > 0 && usb_hid.ready()) {
-      Serial.println("sending keys");
       usb_hid.keyboardReport(KEYBOARD_ID, keyboard_modifier, keyboard_keys);
       keyboard_release_pending = true;
     } else if (keyboard_release_pending && usb_hid.ready()) {
-      Serial.println("sending release");
       usb_hid.keyboardRelease(KEYBOARD_ID);
       keyboard_release_pending = false;
     }
@@ -510,7 +508,7 @@ void updateHidReports(int32_t *a, bool *b) {
     
     // Capture matrix key if button pressed 
     if (b[12]) {
-      modifier      = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
+      modifier     = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
       keys.push_back(k_ascii2hid[(uint8_t)matrix[key_i][key_j]][1]);
     }
 
@@ -757,8 +755,10 @@ void setup() {
   uint32_t arcade_right_interrupt_mask = 0;
   uint32_t encoder_interrupt_mask = 0;
   for (uint8_t i = 0; i < buttons_size; i++) {
-    if(buttons_source[i] == 0) {
+    if(buttons_source[i] == (uint8_t)Source::Digital) {
       pinMode(buttons_pin[i], INPUT_PULLUP);
+    } else if (buttons_source[i] == (uint8_t)Source::ADC) {
+      // No configuration required for ADC voltage readings
     } else if (buttons_source[i] == (uint8_t)Source::Touch) {
       touchAttachInterruptArg(buttons_pin[i], [](void* arg) { interruptSource(arg); }, (void*)buttons_source[i], touch_threshold); 
     } else if (buttons_source[i] == (uint8_t)Source::ArcadeLeft && device_installed[(uint8_t)Source::ArcadeLeft]) {

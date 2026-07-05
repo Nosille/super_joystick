@@ -213,11 +213,12 @@ class DisplayKeyMatrix {
     }
 
     void draw() {
-      updateMatrix(0);
+      updateMatrix(0, k_keyRows / 2, k_keyCols / 2);
     }
 
-    void updateMatrix(uint8_t n) {
+    void updateMatrix(const uint8_t &n, const uint8_t &key_i, const uint8_t &key_j) {
       // Serial.println("updateMatrix");
+      // load matrix
       if(n == 1) {
         m_matrix = k_keyMatrix_L2;
       } else if(n == 2) {
@@ -225,6 +226,7 @@ class DisplayKeyMatrix {
       } else {
         m_matrix = k_keyMatrix_L1;
       }
+      // draw matrix
       m_display->setDrawColor(0);
       m_display->drawBox(m_x, m_y, m_w, m_h);
       m_display->setDrawColor(1);             
@@ -232,7 +234,12 @@ class DisplayKeyMatrix {
         for(uint8_t j = 0; j < k_keyCols; j++) {
           drawKey(i, j);
         }
-      }      
+      }   
+      // highlight key
+      m_display->setDrawColor(1);
+      m_display->drawBox(m_x + 8 * key_j, m_y + 8 * key_i, 8, 8);      
+      m_display->setDrawColor(0);
+      drawKey(key_i, key_j);   
       delay(0); m_display->updateDisplayArea(m_xt, m_yt, m_wt, m_ht);
       last_n = n;
     }
@@ -240,7 +247,7 @@ class DisplayKeyMatrix {
     void update(const uint8_t &n, const uint8_t &key_i, const uint8_t &key_j) {
       // if index changed updateMatrix
       if (n != last_n) {
-        updateMatrix(n);
+        updateMatrix(n, key_i, key_j);
       }
       // if same key as last pass exit
       if(last_i == key_i && last_j == key_j) return;

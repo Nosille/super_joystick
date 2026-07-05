@@ -1,53 +1,33 @@
-
 // Keyboard character list
-// uint8_t const k_keyRows = 6;
-// uint8_t const k_keyCols = 10;
-// char const k_keyMatrix_L1[k_keyRows][k_keyCols] = {
-//   // bksp  lf   cr  esc  tab  home end ^home ^end del
-//     {0x08,0x0A,0x0D,0x1B,0x09,0x02,0x03,0x01,0x04,0x7F},
-//     { '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'}, 
-//     { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'},
-//     { 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'},
-//     { 'u', 'v', 'w', 'x', 'y', 'z', '-', '=', '[', ']'},
-//     {0x0B,0X0C,'\`','\'', ';', ',', '.', '/','\\', ' '}
-//   // Undo Redo
-// };
-// char const k_keyMatrix_L2[k_keyRows][k_keyCols] = {
-//   //  F1   F2   F3   F4   F5   F6   F7   F8   F9   F10
-//     {0x11,0X12,0X13,0X14,0X15,0X16,0X17,0X18,0X19,0X1A},
-//     { '!', '@', '#', '$', '%', '^', '&', '*', '(', ')'},
-//     { 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'},
-//     { 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'},
-//     { 'U', 'V', 'W', 'X', 'Y', 'Z', '_', '+','\{','\}'},
-//     {0x1C,0x1D, '~','\"', ':', '<', '>', '?', '|', ' '}
-//   // F11  F12   
-// };
 uint8_t const k_keyRows = 6;
 uint8_t const k_keyCols = 8;
 char const k_keyMatrix_L1[k_keyRows][k_keyCols] = {
-  // bksp  lf   cr  esc  tab  ^home ^end del  
-    {0x08,0x0A,0x0D,0x1B,0x09,0x01,0x04,0x7F},
+  // bksp       lf   cr  pg_u  tab      del  
+    {0x08, ' ',0x0A,0x0D,0x05,0x09, ' ',0x7F},
     { '1', '2', '3', '4', '5', '6', '7', '8'},
     { '9', '0', 'a', 'b', 'c', 'd', 'e', 'f'},
     { 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'},
     { 'o', 'p', 'q', 'r', 's', 't', 'u', 'v'},
-    { 'w', 'x', 'y', 'z','\\', '.', ',', ' '}
+    { 'w', 'x', 'y', 'z',0x06, '.', ',', ' '}
+  //                     pg_d  
 };
 char const k_keyMatrix_L2[k_keyRows][k_keyCols] = {
-  //  F1   F2   F3   F4   F5   F6   F7   F8   
-    {0x11,0X12,0X13,0X14,0X15,0X16,0X17,0X18},
+  // undo                ^home          redo
+    {0x0B, ' ', ' ', ' ',0x01, ' ', ' ',0x0C},
     { '!', '@', '#', '$', '%', '^', '&', '*'},
     { '(', ')', 'A', 'B', 'C', 'D', 'E', 'F'},
     { 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'},
     { 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'},
-    { 'W', 'X', 'Y', 'Z', '|', '<', '>', '_'}
+    { 'W', 'X', 'Y', 'Z',0x04, '<', '>', '_'}
+  //                     ^end    
 };
 char const k_keyMatrix_L3[k_keyRows][k_keyCols] = {
-  //  F9  F10  F11  F12  pg_u
-    {0x19,0X1A,0X1C,0X1D,0x05, ' ', ' ', ' '},
-    { ' ', ' ', ' ', ' ', ' ', '~', '?', '='},
+  //  F1   F2   F3   F4   F5   F6   F7   F8 
+  //  F9  F10  F11  F12 
+    {0x11,0X12,0X13,0X14,0X15,0X16,0X17,0X18},    
+    {0x19,0X1A,0X1C,0X1D, ' ', '~', '?', '='},
     { '[', ']','\{','\}', ':', ';', '+', '-'},
-    { '/','\\', ' ', ' ', ' ','\`','\'','\"'},
+    { '/','\\', '<', '>', '|','\`','\'','\"'},
     { ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
     {0x0B,0x01,0x04,0x07,0x06,0x0E,0x0F,0x0C}
   // Undo Top Bottom ps  pg_d pausebreak Redo    
@@ -56,14 +36,15 @@ char const k_keyMatrix_L3[k_keyRows][k_keyCols] = {
 
 /*--------------------------------------------------------------------
  * ASCII to KEYCODE Conversion
- *  Expand to array of [128][2] (shift, keycode)
+ *  Expand to array of [128][2] cols=(modifier, keycode)
+ *  modifiers: none = 0, ctrl = 1, shift = 2
  *
  * Usage: example to convert input chr into keyboard report (modifier + keycode)
  *
  *  uint8_t const conv_table[128][2] =  { HID_ASCII_TO_KEYCODE };
  *
- *  uint8_t keycode[6] = { 0 };
  *  uint8_t modifier   = 0;
+ *  uint8_t keycode[6] = { 0 };
  *
  *  modifier   = conv_table[chr][0];
  *  keycode[0] = conv_table[chr][1];
