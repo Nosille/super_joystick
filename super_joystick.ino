@@ -91,8 +91,10 @@ TaskHandle_t taskInputsHandle = NULL;
 TaskHandle_t taskReportHandle = NULL;
 
 // Queues
-QueueHandle_t queueAxes = NULL;
-QueueHandle_t queueButtons = NULL;
+QueueHandle_t queueAxes2Report = NULL;
+QueueHandle_t queueButtons2Report = NULL;
+QueueHandle_t queueAxes2Display = NULL;
+QueueHandle_t queueButtons2Display = NULL;
 QueueHandle_t queueMode = NULL;
 
 // Global variables
@@ -245,8 +247,10 @@ void taskReadInputs(void *parameter) {
     // UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
     // Serial.print(" high water mark free: "); Serial.println(stack_high_water_mark)
 
-    xQueueOverwrite(queueAxes, &axis_values);
-    xQueueOverwrite(queueButtons, &button_values);
+    xQueueOverwrite(queueAxes2Report, axis_values);
+    xQueueOverwrite(queueButtons2Report, button_values);
+    xQueueOverwrite(queueAxes2Display, axis_values);
+    xQueueOverwrite(queueButtons2Display, button_values);    
 
     // switch modes with debounce
     if (button_values[1] && keyboard_mode) {
@@ -298,10 +302,34 @@ void taskReadInputs(void *parameter) {
     xQueueOverwrite(queueMode, &keyboard_mode);
     
     unsigned long end = millis();
-    // Serial.print("  Process Time: "); Serial.println(end - begin);
-    // Serial.print("     Loop Time: "); Serial.println(end - last_read);
+    Serial.print("  Process Time: "); Serial.println(end - begin);
+    Serial.print("     Loop Time: "); Serial.println(end - last_read);
     last_read = end;
     vTaskDelay(5 / portTICK_PERIOD_MS);  // 5ms
+  }
+}
+
+void taskUpdateHid (void *parameter) {
+  for (;;) { 
+    unsigned long begin = millis();
+    // get axes
+    // Serial.println("Get axes");
+    int32_t a[axes_size] = {0};
+    if (!xQueueReceive(queueAxes2Report, &a, portMAX_DELAY)) {
+      Serial.println("Failed to get Axes from queue.");
+    }
+
+    // get buttons
+    // Serial.println("Get buttons");
+    bool b[buttons_size] = {false};
+    if (!xQueueReceive(queueButtons2Report, &b, portMAX_DELAY)) {
+      Serial.println("Failed to get Buttons from queue.");
+    }
+
+    // Update HID reports
+    updateHidReports(a, b);
+
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // 5ms    
   }
 }
 
@@ -329,7 +357,7 @@ void taskProcessHid(void *parameter) {
       usb_hid.keyboardRelease(KEYBOARD_ID);
       keyboard_release_pending = false;
     }
-    vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // 5ms
   }
 }
 
@@ -620,15 +648,15 @@ void updateHidReports(int32_t *a, bool *b) {
 }
 
 void setup() {
-  // Start serial
-  Serial.begin(115200);
-
   // Set USB Description
-  TinyUSBDevice.setID(0xFFFF, 0x0000);
+  TinyUSBDevice.setID(0xFFFF, 0x0002);
   TinyUSBDevice.setManufacturerDescriptor("Nosille's Stuff");
   TinyUSBDevice.setProductDescriptor("Super Joystick");
-  TinyUSBDevice.setVersion(0.0);
   TinyUSBDevice.setSerialDescriptor("0001");
+  TinyUSBDevice.setVersion(0.0);
+
+  // Start serial
+  Serial.begin(115200);
 
   // Manual begin() is required on core without built-in support e.g. mbed rp2040
   if (!TinyUSBDevice.isInitialized()) {
@@ -638,7 +666,7 @@ void setup() {
   // Set up HID
   usb_hid.setPollInterval(10); // Poll every 20ms
   usb_hid.setReportDescriptor(desc_hid_report, sizeof(desc_hid_report));
-  usb_hid.setStringDescriptor("TinyUSB HID Composite");
+  usb_hid.setStringDescriptor("Nosille's Joystick");
   usb_hid.setReportCallback(get_report_callback, set_report_callback);
   usb_hid.begin();
 
@@ -824,14 +852,16 @@ void setup() {
   setLeds();
 
   // Create queues
-  queueAxes = xQueueCreate(QUEUE_SIZE, axes_size * sizeof(int32_t));
-  if (queueAxes == NULL) {
+  queueAxes2Report = xQueueCreate(QUEUE_SIZE, axes_size * sizeof(int32_t));
+  queueAxes2Display = xQueueCreate(QUEUE_SIZE, axes_size * sizeof(int32_t));  
+  if (queueAxes2Report == NULL || queueAxes2Display == NULL) {
     Serial.println("Failed to create axes queue!");
     while (1);
   }
 
-  queueButtons = xQueueCreate(QUEUE_SIZE, buttons_size * sizeof(bool));
-  if (queueButtons == NULL) {
+  queueButtons2Report = xQueueCreate(QUEUE_SIZE, buttons_size * sizeof(bool));
+  queueButtons2Display = xQueueCreate(QUEUE_SIZE, buttons_size * sizeof(bool));  
+  if (queueButtons2Report == NULL || queueButtons2Display == NULL) {
     Serial.println("Failed to create button queue!");
     while (1);
   }
@@ -854,8 +884,18 @@ void setup() {
   );
 
   xTaskCreatePinnedToCore(
+    taskUpdateHid,
+    "hidUpdateTask",
+    2000,  // Task stack
+    NULL,
+    1,
+    &taskReportHandle,
+    1  // Core
+  );
+  
+  xTaskCreatePinnedToCore(
     taskProcessHid,
-    "hidTask",
+    "hidProcessTask",
     2000,  // Task stack
     NULL,
     1,
@@ -871,14 +911,14 @@ void loop() {
   // get axes
   // Serial.println("Get axes");
   int32_t a[axes_size] = {0};
-  if (!xQueueReceive(queueAxes, &a, portMAX_DELAY)) {
+  if (!xQueueReceive(queueAxes2Display, &a, portMAX_DELAY)) {
     Serial.println("Failed to get Axes from queue.");
   }
 
   // get buttons
   // Serial.println("Get buttons");
   bool b[buttons_size] = {false};
-  if (!xQueueReceive(queueButtons, &b, portMAX_DELAY)) {
+  if (!xQueueReceive(queueButtons2Display, &b, portMAX_DELAY)) {
     Serial.println("Failed to get Buttons from queue.");
   }
 
@@ -887,9 +927,6 @@ void loop() {
   if (!xQueueReceive(queueMode, &mode, portMAX_DELAY)) {
     Serial.println("Failed to get Mode from queue.");
   }
-
-  // Update HID reports
-  updateHidReports(a, b);
 
   // Update display
   if(device_installed[(uint8_t)Source::Display]) {
@@ -900,12 +937,12 @@ void loop() {
     }
   }
 
-  // // display info
-  // if(device_installed[(uint8_t)Source::Display]) {
-  //   unsigned long timestamp = millis(); 
-  //   display.updateInfo(timestamp, last_display);
-  //   last_display = timestamp;      
-  // }
+  // display info
+  if(device_installed[(uint8_t)Source::Display]) {
+    unsigned long timestamp = millis(); 
+    display.updateInfo(timestamp, last_display);
+    last_display = timestamp;      
+  }
 
   // if(device_installed[(uint8_t)Source::EncoderLeft]) {
   //   encoder_pixel_left.setPixelColor(0, ColorWheel(encoder_pixel_left, a[axes_size - 5] & 0xFF));
