@@ -1,5 +1,6 @@
 #include "HardwareSerial.h"
 #include <string>
+#include <Wire.h>
 #include <algorithm>
 #include <U8g2lib.h>
 #include <Adafruit_TinyUSB.h>
@@ -494,8 +495,8 @@ class Display{
     DisplayKeyboard m_displayKeyboard; 
 
   public:  
-    Display(int i2c_addr)
-      : m_display(U8G2_SH1107_64X128_F_HW_I2C(U8G2_R0, U8X8_PIN_NONE))
+    Display(int i2c_addr, TwoWire *Wi = NULL)
+      : m_display(U8G2_SH1107_64X128_F_HW_I2C(U8G2_R0, U8X8_PIN_NONE,  Wi->getClock(), Wi->getBusNum()))
       , m_displayJoystick(&m_display) 
       , m_displayKeyboard(&m_display) 
     {

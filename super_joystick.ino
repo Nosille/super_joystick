@@ -28,7 +28,7 @@
 #define IMU_ADDR       0x28 // Address 0x28 default
 
 // SPI_CS's
-#define MCP3208_CS    15    // Chip Select (CS) pin
+#define MCP3208_CS    12    // Chip Select (CS) pin
 
 // Report ID's
 #define MOUSE_ID      0X01
@@ -50,29 +50,29 @@ enum class Source : uint8_t {
     Imu,         // 9
     Count
 };
-static const uint8_t interrupt_pins[(uint8_t)Source::Count] = { 0, 0, 0, 0, 18, 13, 38, 39, 0, 0};
+static const uint8_t interrupt_pins[(uint8_t)Source::Count] = { 0, 0, 0, 0, 17, 11, 44, 43, 0, 0};
 
 static const uint8_t axes_source[] = { 3,  3,  3,  3,  3,  3,  3,  3,  1,  6,  7,   9,  9,  9,    9,   9,   9};
 static const int16_t axes_scale[]  = {16, 16,-16,-16, 16, 16,-16,-16,-16,  1,  1,-100,100,100,-1000,1000,1000};
-static const uint8_t axes_pin[]    = { 2,  3,  0,  1,  6,  7,  4,  5,  8,  0,  0,   0,  1,  2,    3,   4,   5};
+static const uint8_t axes_pin[]    = { 2,  3,  0,  1,  6,  7,  4,  5,  5,  0,  0,   0,  1,  2,    3,   4,   5};
 static const uint8_t axes_size = sizeof(axes_pin) / sizeof(axes_pin[0]);
-static const uint8_t buttons_source[] = { 0,  0,  0,  2,  2,  4,  4,  4,  4,  5,  5,  5,  5,  4,  5,  4,  5,  4,  5,  4,  5,  6,  7};
-static const uint8_t buttons_pin[]    = { 9,  6,  5, 14, 11,  0,  1,  2,  3,  0,  1,  2,  3,  4,  4,  5,  5, 14, 14, 15, 15, 24, 24};
+static const uint8_t buttons_source[] = {  0,   0,   0,  2,  2,  4,  4,  4,  4,  5,  5,  5,  5,  4,  5,  4,  5,  4,  5,  4,  5,  6,  7};
+static const uint8_t buttons_pin[]    = {  1,  38,  33,  6,  7,  0,  1,  2,  3,  0,  1,  2,  3,  4,  4,  5,  5, 14, 14, 15, 15, 24, 24};
 static const uint8_t buttons_size = sizeof(buttons_pin) / sizeof(buttons_pin[0]);
-static const uint8_t leds_source[] = { 1,  1,  2,  2};
-static const uint8_t leds_pins[]   = {10,  1, 10,  1};
+static const uint8_t leds_source[] = { 4,  4,  4,  5,  5,  5};
+static const uint8_t leds_pins[]   = { 7, 11, 16,  7, 11, 16};
 static const uint8_t led_size = sizeof(leds_pins) / sizeof(leds_pins[0]);
 
 // Devices
 MCP3208 mcp3208;
-Adafruit_seesaw arcade_left;
-Adafruit_seesaw arcade_right;
-Adafruit_seesaw encoder_left;
-Adafruit_seesaw encoder_right;
-Display display(SH1107_ADDR);
-seesaw_NeoPixel encoder_pixel_left  = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800);
-seesaw_NeoPixel encoder_pixel_right = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800);
-Adafruit_BNO055 bno = Adafruit_BNO055(55, IMU_ADDR);
+Adafruit_seesaw arcade_left(&Wire1);
+Adafruit_seesaw arcade_right(&Wire1);
+Adafruit_seesaw encoder_left(&Wire1);
+Adafruit_seesaw encoder_right(&Wire1);
+Display display(SH1107_ADDR, &Wire);
+seesaw_NeoPixel encoder_pixel_left  = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800, &Wire1);
+seesaw_NeoPixel encoder_pixel_right = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800, &Wire1);
+Adafruit_BNO055 bno = Adafruit_BNO055(55, IMU_ADDR, &Wire1);
 
 int touch_threshold = 0;  // if 0 is used, benchmark value is used. Its by default 1,5% change, can be changed by touchSetDefaultThreshold(float percentage)
 bool device_installed[(uint8_t)Source::Count] = {false};
@@ -658,6 +658,10 @@ void setup() {
   // Start serial
   Serial.begin(115200);
 
+  // I2C 
+  Wire.begin();
+  Wire1.begin();
+
   // Manual begin() is required on core without built-in support e.g. mbed rp2040
   if (!TinyUSBDevice.isInitialized()) {
     TinyUSBDevice.begin(0);
@@ -759,8 +763,9 @@ void setup() {
     Serial.println("OLED configured.");
   }
 
-  // Turn up i2c speeds
-  Wire.setClock(400000L); // Increase I2C speed to 400kHz
+  // Increase I2C speed to 400kHz
+  Wire.setClock(400000L); 
+  Wire1.setClock(400000L);
 
   // Setup axes pins
   for (uint8_t i = 0; i < axes_size; i++) {
