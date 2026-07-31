@@ -323,11 +323,11 @@ class DisplayJoystick {
 
   public:
     DisplayJoystick(U8G2 *display)
-      : m_joy1(display, 0, 2, 4, 4)
-      , m_joy2(display, 4, 2, 4, 4)
-      , m_joy3(display, 0, 9, 4, 4)
-      , m_joy4(display, 4, 9, 4, 4)
-      , m_axis1(display, 0, 13, 8, 1)
+      : m_joy1(display, 0, 1, 4, 4)
+      , m_joy2(display, 4, 1, 4, 4)
+      , m_joy3(display, 0, 10, 4, 4)
+      , m_joy4(display, 4, 10, 4, 4)
+      , m_axis1(display, 0, 14, 8, 1)
       , m_button1(display, 0, 7, 1, 1)
       , m_button2(display, 1, 6, 1, 1)
       , m_button3(display, 2, 7, 1, 1)
@@ -336,14 +336,14 @@ class DisplayJoystick {
       , m_button6(display, 6, 6, 1, 1)
       , m_button7(display, 7, 7, 1, 1)
       , m_button8(display, 6, 8, 1, 1) 
-      , m_button9(display, 0, 1, 1, 1) 
-      , m_button10(display,7, 1, 1, 1) 
-      , m_button11(display,3, 1, 1, 1) 
-      , m_button12(display,4, 1, 1, 1)       
-      , m_button13(display,3, 6, 1, 1) 
-      , m_button14(display,4, 6, 1, 1)         
-      , m_button15(display,3, 8, 1, 1) 
-      , m_button16(display,4, 8, 1, 1)         
+      , m_button9(display, 0, 0, 1, 1) 
+      , m_button10(display,7, 0, 1, 1) 
+      , m_button11(display,3, 0, 1, 1) 
+      , m_button12(display,4, 0, 1, 1)       
+      , m_button13(display,3, 5, 1, 1) 
+      , m_button14(display,4, 5, 1, 1)         
+      , m_button15(display,3, 9, 1, 1) 
+      , m_button16(display,4, 9, 1, 1)         
     {
       m_display = display;
     }
@@ -351,8 +351,8 @@ class DisplayJoystick {
     void draw() {
       m_display->clearDisplay();      
       m_display->setDrawColor(1);
-      m_display->drawStr(8, 8, "Joystick:");
-      delay(0); m_display->updateDisplayArea(0, 0, 8, 1);        
+      // m_display->drawStr(8, 8, "Joystick:");
+      // delay(0); m_display->updateDisplayArea(0, 0, 8, 1);        
       m_joy1.draw();
       m_joy2.draw();
       m_joy3.draw();
@@ -401,12 +401,12 @@ class DisplayJoystick {
       delay(0); m_axis1.update(a[8]);
 
       m_display->setDrawColor(0);
-      m_display->drawBox(0, 112, 64, 8);
+      m_display->drawBox(0, 120, 64, 8);
       m_display->setDrawColor(1);
       std::string encposl = std::to_string(a[9]);      
       std::string encposr = std::to_string(a[10]);      
-      m_display->drawStr(0, 120, "Enc: "); m_display->drawStr(24, 120, encposl.c_str()); m_display->drawStr(48, 120, encposr.c_str());
-      delay(0); m_display->updateDisplayArea(0, 14, 8, 1);
+      m_display->drawStr(0, 128, "Enc: "); m_display->drawStr(24, 128, encposl.c_str()); m_display->drawStr(48, 128, encposr.c_str());
+      delay(0); m_display->updateDisplayArea(0, 15, 8, 1);
     }
 };
 

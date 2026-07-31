@@ -1,3 +1,10 @@
+struct keyboard_report
+{
+  uint8_t modifier = 0;
+  uint8_t keys[6] = {0};
+  bool needs_send = false;
+};
+
 /*--------------------------------------------------------------------
  * KEYCODE to Ascii Conversion
  *  Expand to array of [128][2] (ascii without shift, ascii with shift)

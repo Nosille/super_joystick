@@ -1,16 +1,22 @@
 typedef struct TU_ATTR_PACKED
 {
-  int16_t x;          ///< x position of upper left analog-stick
-  int16_t y;          ///< y position of upper left analog-stick
-  int16_t z;          ///< x position of upper right analog-stick
-  int16_t rx;         ///< y position of upper right analog-stick
-  int16_t ry;         ///< x position of lower left analog-stick
-  int16_t rz;         ///< y position of lower left analog-stick
-  int16_t slider;     ///< x position of lower right analog-stick
-  int16_t dial;       ///< y position of lower right analog-stick  
-  int16_t wheel;      ///< potentiometer
-  uint32_t buttons;   ///< Buttons mask for currently pressed buttons
+  int16_t x = 0.0;          ///< x position of upper left analog-stick
+  int16_t y = 0.0;          ///< y position of upper left analog-stick
+  int16_t z = 0.0;          ///< x position of upper right analog-stick
+  int16_t rx = 0.0;         ///< y position of upper right analog-stick
+  int16_t ry = 0.0;         ///< x position of lower left analog-stick
+  int16_t rz = 0.0;         ///< y position of lower left analog-stick
+  int16_t slider = 0.0;     ///< x position of lower right analog-stick
+  int16_t dial = 0.0;       ///< y position of lower right analog-stick  
+  int16_t wheel = 0.0;      ///< potentiometer
+  uint32_t buttons = 0;     ///< Buttons mask for currently pressed buttons
 }my_joystick_report_t;
+
+struct joystick_report
+{
+ my_joystick_report_t joystick;
+ bool needs_send = false;
+};
 
 // Gamepad Report Descriptor Template
 // with 4 joysticks + dial (9 axes of 2 byte each)

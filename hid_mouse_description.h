@@ -1,3 +1,13 @@
+struct mouse_report
+{
+  int8_t x = 0;
+  int8_t y = 0;
+  int8_t v = 0;
+  int8_t h = 0;
+  uint8_t buttons = 0;
+  bool needs_send = false;
+};
+
 // Mouse Report Descriptor Template
 #define MY_HID_REPORT_DESC_MOUSE(...) \
   HID_USAGE_PAGE ( HID_USAGE_PAGE_DESKTOP      )                   ,\
