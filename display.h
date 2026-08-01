@@ -323,27 +323,27 @@ class DisplayJoystick {
 
   public:
     DisplayJoystick(U8G2 *display)
-      : m_joy1(display, 0, 1, 4, 4)
-      , m_joy2(display, 4, 1, 4, 4)
-      , m_joy3(display, 0, 10, 4, 4)
-      , m_joy4(display, 4, 10, 4, 4)
-      , m_axis1(display, 0, 14, 8, 1)
-      , m_button1(display, 0, 7, 1, 1)
-      , m_button2(display, 1, 6, 1, 1)
-      , m_button3(display, 2, 7, 1, 1)
-      , m_button4(display, 1, 8, 1, 1)
-      , m_button5(display, 5, 7, 1, 1)
-      , m_button6(display, 6, 6, 1, 1)
-      , m_button7(display, 7, 7, 1, 1)
-      , m_button8(display, 6, 8, 1, 1) 
-      , m_button9(display, 0, 0, 1, 1) 
-      , m_button10(display,7, 0, 1, 1) 
-      , m_button11(display,3, 0, 1, 1) 
-      , m_button12(display,4, 0, 1, 1)       
-      , m_button13(display,3, 5, 1, 1) 
-      , m_button14(display,4, 5, 1, 1)         
-      , m_button15(display,3, 9, 1, 1) 
-      , m_button16(display,4, 9, 1, 1)         
+      : m_joy1(display,  0,  1,  4,  4)      // Upper Left
+      , m_joy2(display,  4,  1,  4,  4)      // Upper Right
+      , m_joy3(display,  0, 10,  4,  4)      // Lower Left
+      , m_joy4(display,  4, 10,  4,  4)      // Lower Right
+      , m_axis1(display,  0, 14,  8,  1)     // Bar at Bottom
+      , m_button1(display,   0,  7,  1,  1)  // Left D-Pad
+      , m_button2(display,   1,  6,  1,  1)  // Left D-Pad
+      , m_button3(display,   2,  7,  1,  1)  // Left D-Pad
+      , m_button4(display,   1,  8,  1,  1)  // Left D-Pad
+      , m_button5(display,   5,  7,  1,  1)  // Right D-Pad
+      , m_button6(display,   6,  6,  1,  1)  // Right D-Pad
+      , m_button7(display,   7,  7,  1,  1)  // Right D-Pad
+      , m_button8(display,   6,  8,  1,  1)  // Right D-Pad
+      , m_button9(display,   0,  0,  1,  1)  // Left Touch
+      , m_button10(display,  7,  0,  1,  1)  // Right Touch
+      , m_button11(display,  2,  0,  1,  1)  // Upper Left Switch 
+      , m_button12(display,  5,  0,  1,  1)  // Upper Right Switch     
+      , m_button13(display,  2,  5,  1,  1)  // Lower Left Switch
+      , m_button14(display,  5,  5,  1,  1)  // Lower Right Switch       
+      , m_button15(display,  3,  6,  1,  1)  // Left Encoder
+      , m_button16(display,  4,  6,  1,  1)  // Right Encoder
     {
       m_display = display;
     }

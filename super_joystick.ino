@@ -1,3 +1,4 @@
+#include <map>
 #include <string>
 #include <cstdint>
 #include <algorithm>
@@ -21,14 +22,6 @@
 
 // I2C_ADDR's
 #define SH1107_ADDR    0x3C // Address 0x3C default
-#define ARCADE_ADDR_L  0x49 // Address 0x49 default
-#define ARCADE_ADDR_R  0x4A // Address 0x49 default
-#define ENCODER_ADDR_L 0x36 // Address 0x36 default
-#define ENCODER_ADDR_R 0x37 // Address 0x36 default
-#define IMU_ADDR       0x28 // Address 0x28 default
-
-// SPI_CS's
-#define MCP3208_CS     12   // Chip Select (CS) pin
 
 // Report ID's
 #define MOUSE_ID      0X01
@@ -68,23 +61,22 @@ void interruptSource(void* arg) {
 // Tasks
 void taskReadInputs(void* parameter) {
   // Devices
-  MCP3208 mcp3208;
-  Adafruit_seesaw arcade_left(&Wire1);
-  Adafruit_seesaw arcade_right(&Wire1);
-  Adafruit_seesaw encoder_left(&Wire1);
-  Adafruit_seesaw encoder_right(&Wire1);
-  Adafruit_BNO055 bno = Adafruit_BNO055(55, IMU_ADDR, &Wire1);
-
-  seesaw_NeoPixel encoder_pixel_left = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800, &Wire1);
-  seesaw_NeoPixel encoder_pixel_right = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800, &Wire1);
+  std::map<int16_t, MCP3208> mcp3208;
+  std::map<int16_t, Adafruit_seesaw> seesaw;
+  std::map<int16_t, Adafruit_BNO055> bno055;
+  // seesaw_NeoPixel encoder_pixel_left = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800, &Wire1);
+  // seesaw_NeoPixel encoder_pixel_right = seesaw_NeoPixel(1, 6, NEO_GRB + NEO_KHZ800, &Wire1);
 
   // Global variables
   int32_t axis_values[axes_size] = { 0 };
+  bool axis_changed[axes_size] = { false };
   bool button_values[buttons_size] = { false };
 
   int touch_threshold = 0;  // if 0 is used, benchmark value is used. Its by default 1,5% change, can be changed by touchSetDefaultThreshold(float percentage)
-  bool device_installed[(int16_t)Source::Count] = { false };
-  bool interrupt_triggered[(int16_t)Source::Count] = { false };
+  std::map<int16_t, uint32_t> button_mask;
+  std::map<int16_t, uint32_t> interrupt_mask;
+  bool device_installed[devices_size] = { false };
+  bool interrupt_triggered[devices_size] = { false };
 
   unsigned long last_read = millis();
 
@@ -92,103 +84,69 @@ void taskReadInputs(void* parameter) {
   Wire1.begin();
   Wire1.setClock(400000L);
 
-  // Connect to MCP3208
-  if (!SPI.begin() || !mcp3208.begin(MCP3208_CS)) {
-    Serial.println(F("MCP3208 not found!"));
-  } else {
-    device_installed[(int16_t)Source::MCP3208] = true;
-    Serial.println("MCP3208 configured.");
-  }
-
-  // Connect to arcade controllers
-  if (!arcade_left.begin(ARCADE_ADDR_L)) {
-    Serial.println(F("Left arcade controller not found!"));
-  } else {
-    uint16_t pid;
-    uint8_t year, mon, day;
-    arcade_left.getProdDatecode(&pid, &year, &mon, &day);
-    if (pid != 5690) {
-      Serial.println("Wrong PID for left arcade controller!");
-    } else {
-      device_installed[(int16_t)Source::ArcadeLeft] = true;
-      Serial.println("Left arcade controller configured.");
+  // Connect to devices
+  for (uint8_t i = 0; i < devices_size; i++) {
+    // Connect to MCP3208
+    if(devices[i][0] == (int16_t)Source::MCP3208) {
+      MCP3208 device;
+      if (!SPI.begin() || !device.begin((uint8_t)devices[i][1])) {
+        Serial.print(i); Serial.print(") "); Serial.println("MCP3208 not found!");
+      } else {
+        mcp3208[i] = device;
+        device_installed[i] = true;
+        Serial.print(i); Serial.print(") "); Serial.println("MCP3208 configured.");
+      }
     }
-  }
 
-  if (!arcade_right.begin(ARCADE_ADDR_R)) {
-    Serial.println(F("Right arcade controller not found!"));
-  } else {
-    uint16_t pid;
-    uint8_t year, mon, day;
-    arcade_right.getProdDatecode(&pid, &year, &mon, &day);
-    if (pid != 5690) {
-      Serial.println("Wrong PID for right arcade controller!");
-    } else {
-      device_installed[(int16_t)Source::ArcadeRight] = true;
-      Serial.println("Right arcade controller configured.");
+    // Connect to Seesaw
+    if(devices[i][0] == (int16_t)Source::Ada1616 || devices[i][0] == (int16_t)Source::Encoder) {
+      Adafruit_seesaw device(&Wire1);
+      if (!device.begin((uint8_t)devices[i][1])) {
+        Serial.print(i); Serial.print(") "); Serial.println("Seesaw not found!");
+      } else {
+        seesaw[i] = device;
+        device_installed[i] = true;
+        interrupt_mask[i] = 0;
+        button_mask[i] = 0;
+        Serial.print(i); Serial.print(") "); Serial.println("Seesaw configured.");
+      }
     }
-  }
 
-  // Connect to rotary encoder
-  if (!encoder_left.begin(ENCODER_ADDR_L) || !encoder_pixel_left.begin(ENCODER_ADDR_L)) {
-    Serial.println("Couldn't find left rotary encoder");
-  } else {
-    uint16_t pid;
-    uint8_t year, mon, day;
-    encoder_left.getProdDatecode(&pid, &year, &mon, &day);
-    if (pid != 4991) {
-      Serial.println("Wrong PID for left rotary encoder!");
-    } else {
-      device_installed[(int16_t)Source::EncoderLeft] = true;
-      Serial.println("Left rotary encoder configured.");
+    // Connect to BNO055
+    if(devices[i][0] == (int16_t)Source::BNO055) {  
+      Adafruit_BNO055 device = Adafruit_BNO055(55, (uint8_t)devices[i][1], &Wire1);  
+      if (!device.begin()) {
+        Serial.print(i); Serial.print(") "); Serial.println("BNO055 not found!");
+      } else {
+        bno055[i] = device;
+        device_installed[i] = true;
+        device.setExtCrystalUse(true);
+        Serial.print(i); Serial.print(") "); Serial.println("BNO055 configured.");
+      }
     }
-  }
-
-  if (!encoder_right.begin(ENCODER_ADDR_R) || !encoder_pixel_right.begin(ENCODER_ADDR_R)) {
-    Serial.println("Couldn't find right rotary encoder");
-  } else {
-    uint16_t pid;
-    uint8_t year, mon, day;
-    encoder_right.getProdDatecode(&pid, &year, &mon, &day);
-    if (pid != 4991) {
-      Serial.println("Wrong PID for right rotary encoder!");
-    } else {
-      device_installed[(int16_t)Source::EncoderRight] = true;
-      Serial.println("Right rotary encoder configured.");
-    }
-  }
-
-  // Connect to imu
-  if (!bno.begin()) {
-    Serial.println("Couldn't find imu");
-  } else {
-    device_installed[(int16_t)Source::Imu] = true;
-    Serial.println("Imu configured.");
   }
 
   // Setup axes pins
   for (uint8_t i = 0; i < axes_size; i++) {
-    if (axes[i][0] == (int16_t)Source::Local) {
+    if (devices[axes[i][0]][0] == (int16_t)Source::Local) {
+      // Serial.print(i); Serial.print(") "); Serial.println("local axis configured.");
       pinMode(axes[i][1], INPUT);
-    } else if (axes[i][0] == (int16_t)Source::ArcadeLeft && device_installed[(int16_t)Source::ArcadeLeft]) {
-      arcade_left.pinMode(axes[i][1], INPUT);
-    } else if (axes[i][0] == (int16_t)Source::ArcadeRight && device_installed[(int16_t)Source::ArcadeRight]) {
-      arcade_right.pinMode(axes[i][1], INPUT);
-    } else if (axes[i][0] == (int16_t)Source::EncoderLeft && device_installed[(int16_t)Source::EncoderLeft]) {
-      encoder_left.pinMode(axes[i][1], INPUT);
-    } else if (axes[i][0] == (int16_t)Source::EncoderRight && device_installed[(int16_t)Source::EncoderRight]) {
-      encoder_right.pinMode(axes[i][1], INPUT);
+    } else if (devices[axes[i][0]][0] == (int16_t)Source::Ada1616 && device_installed[axes[i][0]]) {
+      // Serial.print(i); Serial.print(") "); Serial.println("ada1616 axis configured.");
+      seesaw[axes[i][0]].pinMode(axes[i][1], INPUT);
+    } else if (devices[axes[i][0]][0] == (int16_t)Source::Encoder && device_installed[axes[i][0]]) {
+      // Serial.print(i); Serial.print(") "); Serial.println("encoder axis configured.");
+      seesaw[axes[i][0]].pinMode(axes[i][1], INPUT);
     }
   }
 
   // Setup button pins
   touchSetDefaultThreshold(5);
-  uint32_t arcade_left_interrupt_mask = 0;
-  uint32_t arcade_right_interrupt_mask = 0;
-  uint32_t encoder_interrupt_mask = 0;
+  Serial.print("button size: "); Serial.println(buttons_size);
   for (uint8_t i = 0; i < buttons_size; i++) {
-    if (buttons[i][0] == (int16_t)Source::Local) {
+    if (devices[buttons[i][0]][0] == (int16_t)Source::Local) {
       if (buttons[i][2] == (int16_t)ButtonType::Digital) {
+        Serial.print(i); Serial.print(") "); Serial.println("local digital configured.");
         pinMode(buttons[i][1], INPUT_PULLUP);
         attachInterruptArg(
           buttons[i][1], [](void* arg) {
@@ -196,148 +154,118 @@ void taskReadInputs(void* parameter) {
           },
           (void*)&interrupt_triggered[buttons[i][0]], CHANGE);
       } else if (buttons[i][2] == (int16_t)ButtonType::Touch) {
+        Serial.print(i); Serial.print(") "); Serial.println("local touch configured.");
         touchAttachInterruptArg(
           buttons[i][1], [](void* arg) {
             interruptSource(arg);
           },
           (void*)&interrupt_triggered[buttons[i][0]], touch_threshold);
       }
-    } else if (buttons[i][0] == (int16_t)Source::ArcadeLeft && device_installed[(int16_t)Source::ArcadeLeft]) {
-      arcade_left.pinMode(buttons[i][1], INPUT_PULLUP);
-      arcade_left_interrupt_mask |= (1UL << buttons[i][1]);
-    } else if (buttons[i][0] == (int16_t)Source::ArcadeRight && device_installed[(int16_t)Source::ArcadeRight]) {
-      arcade_right.pinMode(buttons[i][1], INPUT_PULLUP);
-      arcade_right_interrupt_mask |= (1UL << buttons[i][1]);
-    } else if (buttons[i][0] == (int16_t)Source::EncoderLeft && device_installed[(int16_t)Source::EncoderLeft]) {
-      encoder_left.pinMode(buttons[i][1], INPUT_PULLUP);
-      encoder_interrupt_mask |= (1UL << buttons[i][1]);
-    } else if (buttons[i][0] == (int16_t)Source::EncoderRight && device_installed[(int16_t)Source::EncoderRight]) {
-      encoder_right.pinMode(buttons[i][1], INPUT_PULLUP);
-      encoder_interrupt_mask |= (1UL << buttons[i][1]);
+    } else if (devices[buttons[i][0]][0] == (int16_t)Source::Ada1616 && device_installed[buttons[i][0]]) {
+      Serial.print(i); Serial.print(") "); Serial.println("Ada1616 digital configured.");
+      seesaw[buttons[i][0]].pinMode(buttons[i][1], INPUT_PULLUP);
+      interrupt_mask[buttons[i][0]] |= (1UL << buttons[i][1]);
+    } else if (devices[buttons[i][0]][0] == (int16_t)Source::Encoder && device_installed[buttons[i][0]]) {
+      Serial.print(i); Serial.print(") "); Serial.println("Encoder digital configured.");
+      seesaw[buttons[i][0]].pinMode(buttons[i][1], INPUT_PULLUP);
+      interrupt_mask[buttons[i][0]] |= (1UL << buttons[i][1]);
     }
   }
 
-  // Setup arcade controllers
-  if (device_installed[(int16_t)Source::ArcadeLeft]) {
-    pinMode(interrupt_pins[(int16_t)Source::ArcadeLeft], INPUT_PULLUP);
-    attachInterruptArg(
-      digitalPinToInterrupt(interrupt_pins[(int16_t)Source::ArcadeLeft]),
-      [](void* arg) {
-        interruptSource(arg);
-      },
-      (void*)&interrupt_triggered[(int16_t)Source::ArcadeLeft], FALLING);
-    arcade_left.setGPIOInterrupts(arcade_left_interrupt_mask, 1);
-  }
-  if (device_installed[(int16_t)Source::ArcadeRight]) {
-    pinMode(interrupt_pins[(int16_t)Source::ArcadeRight], INPUT_PULLUP);
-    attachInterruptArg(
-      digitalPinToInterrupt(interrupt_pins[(int16_t)Source::ArcadeRight]),
-      [](void* arg) {
-        interruptSource(arg);
-      },
-      (void*)&interrupt_triggered[(int16_t)Source::ArcadeRight], FALLING);
-    arcade_right.setGPIOInterrupts(arcade_right_interrupt_mask, 1);
-  }
-
-  // Setup rotary encoder
-  if (device_installed[(int16_t)Source::EncoderLeft]) {
-    pinMode(interrupt_pins[(int16_t)Source::EncoderLeft], INPUT_PULLUP);
-    attachInterruptArg(
-      digitalPinToInterrupt(interrupt_pins[(int16_t)Source::EncoderLeft]),
-      [](void* arg) {
-        interruptSource(arg);
-      },
-      (void*)&interrupt_triggered[(int16_t)Source::EncoderLeft], FALLING);
-    encoder_left.setGPIOInterrupts(encoder_interrupt_mask, 1);
-    encoder_left.enableEncoderInterrupt();
-    encoder_pixel_left.setBrightness(20);
-    encoder_pixel_left.show();
+  // Setup interrupts
+  for (const auto& [index, mask] : interrupt_mask) {
+    Serial.print(index); Serial.print(": "); Serial.println(mask);
+    if (devices[index][0] == (int16_t)Source::Ada1616 && device_installed[index]) {
+      pinMode(devices[index][2], INPUT_PULLUP);
+      attachInterruptArg(
+        digitalPinToInterrupt(devices[index][2]),
+        [](void* arg) {
+          interruptSource(arg);
+        },
+        (void*)&interrupt_triggered[index], FALLING);
+      seesaw[index].setGPIOInterrupts(mask, 1);
+    } else if (devices[index][0] == (int16_t)Source::Encoder && device_installed[index]) {
+      pinMode(devices[index][2], INPUT_PULLUP);
+      attachInterruptArg(
+        digitalPinToInterrupt(devices[index][2]),
+        [](void* arg) {
+          interruptSource(arg);
+        },
+        (void*)&interrupt_triggered[index], FALLING);
+      seesaw[index].setGPIOInterrupts(mask, 1);
+      seesaw[index].enableEncoderInterrupt();
+    }
   }
 
-  if (device_installed[(int16_t)Source::EncoderRight]) {
-    pinMode(interrupt_pins[(int16_t)Source::EncoderRight], INPUT_PULLUP);
-    attachInterruptArg(
-      digitalPinToInterrupt(interrupt_pins[(int16_t)Source::EncoderRight]),
-      [](void* arg) {
-        interruptSource(arg);
-      },
-      (void*)&interrupt_triggered[(int16_t)Source::EncoderRight], FALLING);
-    encoder_right.setGPIOInterrupts(encoder_interrupt_mask, 1);
-    encoder_right.enableEncoderInterrupt();
-    encoder_pixel_right.setBrightness(20);
-    encoder_pixel_right.show();
-  }
-
-  // Setup IMU
-  if (device_installed[(int16_t)Source::Imu]) {
-    bno.setExtCrystalUse(true);
-  }
-
+  // Main loop
   for (;;) {
     unsigned long begin = millis();
 
     // Make copy of interrupt state and reset
-    bool interrupt[(int16_t)Source::Count] = { false };
-    for (uint8_t i = 0; i < (int16_t)Source::Count; i++) {
+    bool interrupt[devices_size] = { false };
+    for (uint8_t i = 0; i < devices_size; i++) {
       interrupt[i] = interrupt_triggered[i];
       interrupt_triggered[i] = false;
+      if(interrupt[i]) {
+        Serial.print("interrupt: "); Serial.println(i); 
+      }
     }
 
-    // Read Imu data
-    double x, y, z, rx, ry, rz;
-    if (device_installed[(int16_t)Source::Imu]) {
-      sensors_event_t event_euler, event_gyro;
-      bno.getEvent(&event_euler, Adafruit_BNO055::VECTOR_EULER);
-      bno.getEvent(&event_gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
-      x = event_euler.orientation.y;
-      y = event_euler.orientation.z;
-      z = event_euler.orientation.x;
-      if (z > 180.0) z -= 360.0;
-      rx = event_gyro.gyro.y;
-      ry = event_gyro.gyro.x;
-      rz = event_gyro.gyro.z;
+    // Read Imu Data
+    std::map<int16_t, double> x, y, z, rx, ry, rz;
+    for (uint8_t i = 0; i < devices_size; i++) {
+      if (devices[i][0] == (int16_t)Source::BNO055 && device_installed[i]) {
+        sensors_event_t event_euler, event_gyro;
+        bno055[i].getEvent(&event_euler, Adafruit_BNO055::VECTOR_EULER);
+        bno055[i].getEvent(&event_gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
+        x[i] = event_euler.orientation.y;
+        y[i] = event_euler.orientation.z;
+        z[i] = event_euler.orientation.x;
+        if (z[i] > 180.0) z[i] -= 360.0;
+        rx[i] = event_gyro.gyro.y;
+        ry[i] = event_gyro.gyro.x;
+        rz[i] = event_gyro.gyro.z;
+        // Serial.print(x[i]); Serial.print(":"); Serial.print(y[i]); Serial.print(":"); Serial.println(z[i]);
+      }
     }
 
     // Read axes values from sources
     for (uint8_t i = 0; i < axes_size; ++i) {
-      if (axes[i][0] == (int16_t)Source::Local) {
+      if (devices[axes[i][0]][0] == (int16_t)Source::Local) {
         axis_values[i] = analogRead(axes[i][1]);
-      } else if (axes[i][0] == (int16_t)Source::MCP3208) {
-        axis_values[i] = mcp3208.readADC(axes[i][1]);
-      } else if (axes[i][0] == (int16_t)Source::ArcadeLeft && device_installed[(int16_t)Source::ArcadeLeft] && interrupt[(int16_t)Source::ArcadeLeft]) {
-        axis_values[i] = arcade_left.analogRead(axes[i][1]);
-      } else if (axes[i][0] == (int16_t)Source::ArcadeRight && device_installed[(int16_t)Source::ArcadeRight] && interrupt[(int16_t)Source::ArcadeRight]) {
-        axis_values[i] = arcade_right.analogRead(axes[i][1]);
-      } else if (axes[i][0] == (int16_t)Source::EncoderLeft && device_installed[(int16_t)Source::EncoderLeft] && interrupt[(int16_t)Source::EncoderLeft]) {
-        axis_values[i] = -encoder_left.getEncoderPosition();
-      } else if (axes[i][0] == (int16_t)Source::EncoderRight && device_installed[(int16_t)Source::EncoderRight] && interrupt[(int16_t)Source::EncoderRight]) {
-        axis_values[i] = -encoder_right.getEncoderPosition();
-      } else if (axes[i][0] == (int16_t)Source::Imu && device_installed[(int16_t)Source::Imu]) {
-        if (axes[i][1] == 0) { axis_values[i] = x * axes[i][2]; }
-        if (axes[i][1] == 1) { axis_values[i] = y * axes[i][2]; }
-        if (axes[i][1] == 2) { axis_values[i] = z * axes[i][2]; }
-        if (axes[i][1] == 3) { axis_values[i] = rx * axes[i][2]; }
-        if (axes[i][1] == 4) { axis_values[i] = ry * axes[i][2]; }
-        if (axes[i][1] == 5) { axis_values[i] = rz * axes[i][2]; }
+        axis_changed[i] = true;
+      } else if (devices[axes[i][0]][0] == (int16_t)Source::MCP3208) {
+        axis_values[i] = mcp3208[axes[i][0]].readADC(axes[i][1]);
+        axis_changed[i] = true;
+      } else if (devices[axes[i][0]][0] == (int16_t)Source::Ada1616 && device_installed[axes[i][0]] && interrupt[axes[i][0]]) {
+        axis_values[i] = seesaw[axes[i][0]].analogRead(axes[i][1]);
+        axis_changed[i] = true; 
+      } else if (devices[axes[i][0]][0] == (int16_t)Source::Encoder && device_installed[axes[i][0]] && interrupt[axes[i][0]]) {
+        axis_values[i] = seesaw[axes[i][0]].getEncoderPosition();
+        axis_changed[i] = true;
+      } else if (devices[axes[i][0]][0] == (int16_t)Source::BNO055 && device_installed[axes[i][0]]) {
+        if (axes[i][1] == 0) { axis_values[i] = x[axes[i][0]]; }
+        if (axes[i][1] == 1) { axis_values[i] = y[axes[i][0]]; }
+        if (axes[i][1] == 2) { axis_values[i] = z[axes[i][0]]; }
+        if (axes[i][1] == 3) { axis_values[i] = rx[axes[i][0]]; }
+        if (axes[i][1] == 4) { axis_values[i] = ry[axes[i][0]]; }
+        if (axes[i][1] == 5) { axis_values[i] = rz[axes[i][0]]; }
+        axis_changed[i] = true;
       }
     }
 
-    // Normalize axes values to -32767 to 32767 with center at 0 (16 bit)
+    // scale and shift axes values
     for (uint8_t i = 0; i < axes_size; ++i) {
-      if (axes[i][0] == (int16_t)Source::Local || axes[i][0] == (int16_t)Source::MCP3208) {
-        axis_values[i] = (axis_values[i] - 2048) * axes[i][2];
-        axis_values[i] = std::clamp(axis_values[i], -32767L, 32767L);
-      } else if (axes[i][0] == (int16_t)Source::ArcadeLeft || axes[i][0] == (int16_t)Source::ArcadeRight) {
-        axis_values[i] = (axis_values[i] - 512) * axes[i][2];
-        axis_values[i] = std::clamp(axis_values[i], -32767L, 32767L);
+      if(axis_changed[i] == true) {
+        axis_values[i] = (axis_values[i] - axes[i][2]) * axes[i][3];
+        axis_values[i] = std::clamp(axis_values[i], (int32_t)axes[i][4], (int32_t)axes[i][5]);
       }
+      axis_changed[i] = false;      
     }
 
     // Read buttons values from sources
-    uint32_t arcade_left_mask = 0;
-    uint32_t arcade_right_mask = 0;
     for (uint8_t i = 0; i < buttons_size; ++i) {
-      if (buttons[i][0] == (int16_t)Source::Local && interrupt[(int16_t)Source::Local]) {
+      if (devices[buttons[i][0]][0] == (int16_t)Source::Local && interrupt[buttons[i][0]]) {
         if (buttons[i][2] == (int16_t)ButtonType::Digital) {
           button_values[i] = !digitalRead(buttons[i][1]);
         } else if (buttons[i][2] == (int16_t)ButtonType::Touch) {
@@ -347,31 +275,20 @@ void taskReadInputs(void* parameter) {
             button_values[i] = false;
           }
         }
-      } else if (buttons[i][0] == (int16_t)Source::ArcadeLeft && device_installed[(int16_t)Source::ArcadeLeft] && interrupt[(int16_t)Source::ArcadeLeft]) {
-        arcade_left_mask |= (1UL << buttons[i][1]);
-      } else if (buttons[i][0] == (int16_t)Source::ArcadeRight && device_installed[(int16_t)Source::ArcadeRight] && interrupt[(int16_t)Source::ArcadeRight]) {
-        arcade_right_mask |= (1UL << buttons[i][1]);
-      } else if (buttons[i][0] == (int16_t)Source::EncoderLeft && device_installed[(int16_t)Source::EncoderLeft] && interrupt[(int16_t)Source::EncoderLeft]) {
-        button_values[i] = !encoder_left.digitalRead(buttons[i][1]);
-      } else if (buttons[i][0] == (int16_t)Source::EncoderRight && device_installed[(int16_t)Source::EncoderRight] && interrupt[(int16_t)Source::EncoderRight]) {
-        button_values[i] = !encoder_right.digitalRead(buttons[i][1]);
+      } else if (devices[buttons[i][0]][0] == (int16_t)Source::Ada1616 && device_installed[buttons[i][0]] && interrupt[buttons[i][0]]) {
+        button_mask[buttons[i][0]] |= (1UL << buttons[i][1]);
+      } else if (devices[buttons[i][0]][0] == (int16_t)Source::Encoder && device_installed[buttons[i][0]] && interrupt[buttons[i][0]]) {
+        button_values[i] = !seesaw[buttons[i][0]].digitalRead(buttons[i][1]);
       }
     }
 
-    if (arcade_left_mask != 0) {
-      uint32_t state = arcade_left.digitalReadBulk(arcade_left_mask);
-      for (uint8_t i = 0; i < buttons_size; ++i) {
-        if (buttons[i][0] == (int16_t)Source::ArcadeLeft) {
-          button_values[i] = !(state & (1UL << buttons[i][1]));
-        }
-      }
-    }
-
-    if (arcade_right_mask != 0) {
-      uint32_t state = arcade_right.digitalReadBulk(arcade_right_mask);
-      for (uint8_t i = 0; i < buttons_size; ++i) {
-        if (buttons[i][0] == (int16_t)Source::ArcadeRight) {
-          button_values[i] = !(state & (1UL << buttons[i][1]));
+    for (const auto& [index, mask] : button_mask) {
+      if (devices[index][0] == (int16_t)Source::Ada1616 && device_installed[index]) {
+        uint32_t state = seesaw[index].digitalReadBulk(mask);
+        for (uint8_t i = 0; i < buttons_size; ++i) {
+          if (buttons[i][0] == index) {
+            button_values[i] = !(state & (1UL << buttons[i][1]));
+          }
         }
       }
     }
@@ -981,6 +898,11 @@ void setup() {
     delay(10);
     TinyUSBDevice.attach();
   }
+
+  // Pause execution until serial msg is recieved (helps with debugging)
+  // while (Serial.available() == 0) {
+  //   // Do nothing, just wait
+  // }
 
   // Create queues
   queueAxes = xQueueCreate(QUEUE_SIZE, axes_size * sizeof(int32_t));
