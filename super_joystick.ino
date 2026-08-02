@@ -13,7 +13,9 @@
 #include <Adafruit_BNO055.h>
 #include <utility/imumaths.h>
 
-#include "display.h"
+#include "config_input.h"
+#include "config_display.h"
+
 #include "hid_mouse_description.h"
 #include "hid_joystick_description.h"
 #include "hid_keyboard_description.h"
@@ -28,8 +30,6 @@
 #define KEYBOARD_ID   0X02
 #define JOYSTICK1_ID  0X03
 #define JOYSTICK2_ID  0X04
-
-#include "config.h"
 
 // Handles
 TaskHandle_t taskInputsHandle = NULL;
@@ -338,7 +338,7 @@ void taskReportHid(void* parameter) {
     }
 
     // get mode
-    bool mode = false;
+    uint8_t mode = 0;
     if (!xQueuePeek(queueMode, &mode, pdMS_TO_TICKS(1))) {
       Serial.println("Failed to get Mode from queue.");
     }
@@ -352,7 +352,7 @@ void taskReportHid(void* parameter) {
     // Update HID reports
     updateHidReports(a, b, mode, current_matrix, mouse, keyboard, joystick1, joystick2);
 
-    if(mode) {
+    if(mode == 2) {
       xQueueOverwrite(queueMouse, &mouse);
       xQueueOverwrite(queueKeyboard, &keyboard);
     } else {
@@ -486,7 +486,7 @@ void taskDisplay(void* parameter) {
   bool display_installed = false;
   
   // Global variables
-  bool keyboard_mode = false;
+  uint8_t display_mode = 0;
   unsigned long last_display = millis();
 
   int current_matrix = 0;
@@ -529,11 +529,11 @@ void taskDisplay(void* parameter) {
     }
 
     // switch modes with debounce
-    if (b[1] && keyboard_mode) {
-      Serial.println("Switching to Joystick");
-      keyboard_mode = false;
+    if (b[1] && display_mode == 2) {
+      Serial.println("Switching to Joystick Front");
+      display_mode = 0;
       delay(100);
-      if (display_installed) display.switchMode(0);
+      if (display_installed) display.switchMode(display_mode);
 
       mouse_report mouse;
       mouse.x = 0;
@@ -544,12 +544,17 @@ void taskDisplay(void* parameter) {
       mouse.needs_send = true;
       xQueueOverwrite(queueMouse, &mouse);
       delay(400);
-
-    } else if (b[1]) {
-      Serial.println("Switching to Keyboard");
-      keyboard_mode = true;
+    } else if (b[1] && display_mode == 0) {
+      Serial.println("Switching to Joystick Back");
+      display_mode = 1;
       delay(100);
-      if (display_installed) display.switchMode(1);
+      if (display_installed) display.switchMode(display_mode);
+      delay(400);
+    } else if (b[1] && display_mode == 1) {
+      Serial.println("Switching to Keyboard");
+      display_mode = 2;
+      delay(100);
+      if (display_installed) display.switchMode(display_mode);
 
       joystick_report joystick1;
       joystick1.joystick.x = 0.0;
@@ -587,7 +592,7 @@ void taskDisplay(void* parameter) {
     const bool matrix_dec_pressed = b[2];
     const unsigned long now = millis();
 
-    if(keyboard_mode) {
+    if(display_mode == 2) {
       if (matrix_inc_pressed && !last_matrix_inc && (now - last_matrix_change_ms) > kMatrixDebounceMs) {
         current_matrix++;
         last_matrix_change_ms = now;
@@ -602,16 +607,12 @@ void taskDisplay(void* parameter) {
       last_matrix_dec = matrix_dec_pressed;
     }
 
-    xQueueOverwrite(queueMode, &keyboard_mode);
+    xQueueOverwrite(queueMode, &display_mode);
     xQueueOverwrite(queueMatrix, &current_matrix);
 
     // Update display
     if (display_installed) {
-      if (keyboard_mode) {
-        display.updateKeyboard(&current_matrix, a, b);
-      } else {
-        display.updateJoystick(a, b);
-      }
+      display.update(&current_matrix, a, b);
     }
 
     // display info
@@ -854,6 +855,10 @@ void updateHidReports(const int32_t* a, const bool* b, const bool mode, const in
                                 | ( b[18] << 18)
                                 | ( b[19] << 19)
                                 | ( b[20] << 20)
+                                | ( b[21] << 21)
+                                | ( b[22] << 22)
+                                | ( b[23] << 23)
+                                | ( b[24] << 24)                                
                                 ;
     // Flag joystick1 for pending send
     joystick1.needs_send = true;
@@ -917,7 +922,7 @@ void setup() {
     while (1);
   }
 
-  queueMode = xQueueCreate(QUEUE_SIZE, sizeof(bool));
+  queueMode = xQueueCreate(QUEUE_SIZE, sizeof(uint8_t));
   if (queueMode == NULL) {
     Serial.println("Failed to create mode queue!");
     while (1);

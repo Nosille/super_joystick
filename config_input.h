@@ -56,7 +56,7 @@ static const int16_t buttons[][3] =
     {0,     38,    (int16_t)ButtonType::Digital},
     {0,     33,    (int16_t)ButtonType::Digital},
     {0,      6,    (int16_t)ButtonType::Touch},
-    {0,      7,    (int16_t)ButtonType::Touch},
+    {0,     10,    (int16_t)ButtonType::Touch},
     {2,      0,    (int16_t)ButtonType::Digital},
     {2,      1,    (int16_t)ButtonType::Digital},
     {2,      2,    (int16_t)ButtonType::Digital},
@@ -73,8 +73,12 @@ static const int16_t buttons[][3] =
     {3,     14,    (int16_t)ButtonType::Digital}, 
     {2,     15,    (int16_t)ButtonType::Digital},
     {3,     15,    (int16_t)ButtonType::Digital}, 
+    {0,     18,    (int16_t)ButtonType::Digital},
+    {0,      7,    (int16_t)ButtonType::Digital},
+    {0,     14,    (int16_t)ButtonType::Digital},
+    {0,      3,    (int16_t)ButtonType::Digital},
     {4,     24,    (int16_t)ButtonType::Digital},
-    {5,     24,    (int16_t)ButtonType::Digital}                                                  
+    {5,     24,    (int16_t)ButtonType::Digital},
 };
 static const uint8_t buttons_size = sizeof(buttons) / sizeof(buttons[0]);
 
