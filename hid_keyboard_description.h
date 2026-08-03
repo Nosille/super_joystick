@@ -1,3 +1,4 @@
+// used to pass keyboard data between tasks
 struct keyboard_report
 {
   uint8_t modifier = 0;

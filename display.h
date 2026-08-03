@@ -220,13 +220,8 @@ class DisplayKeyMatrix {
     void updateMatrix(const uint8_t &n, const uint8_t &key_i, const uint8_t &key_j) {
       // Serial.println("updateMatrix");
       // load matrix
-      if(n == 1) {
-        m_matrix = k_keyMatrix_L2;
-      } else if(n == 2) {
-        m_matrix = k_keyMatrix_L3;
-      } else {
-        m_matrix = k_keyMatrix_L1;
-      }
+      m_matrix = k_keyMatrix[n];
+
       // draw matrix
       m_display->setDrawColor(0);
       m_display->drawBox(m_x, m_y, m_w, m_h);

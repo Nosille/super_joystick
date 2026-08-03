@@ -1,3 +1,4 @@
+// Data structure for joystick report
 typedef struct TU_ATTR_PACKED
 {
   int16_t x = 0.0;          ///< x position of upper left analog-stick
@@ -12,6 +13,7 @@ typedef struct TU_ATTR_PACKED
   uint32_t buttons = 0;     ///< Buttons mask for currently pressed buttons
 }my_joystick_report_t;
 
+// Used to pass joystick data between tasks
 struct joystick_report
 {
  my_joystick_report_t joystick;

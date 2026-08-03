@@ -1,5 +1,8 @@
 #include "display.h"
 
+// I2C_ADDR's
+#define SH1107_ADDR    0x3C // Address 0x3C default
+
 class DisplayFront {
   private:
     U8G2* m_display;
@@ -66,10 +69,10 @@ class DisplayFront {
     }
 
     void update(const int32_t *a, const bool *b) {
-      delay(0); m_joy1.update(a[0], -a[1], b[13]); 
-      delay(0); m_joy2.update(a[2], -a[3], b[14]); 
-      delay(0); m_joy3.update(a[4], -a[5], b[15]); 
-      delay(0); m_joy4.update(a[6], -a[7], b[16]);
+      delay(0); m_joy1.update(a[0], a[1], b[13]); 
+      delay(0); m_joy2.update(a[2], a[3], b[14]); 
+      delay(0); m_joy3.update(a[4], a[5], b[15]); 
+      delay(0); m_joy4.update(a[6], a[7], b[16]);
       delay(0); m_button1.update(b[5]);
       delay(0); m_button2.update(b[6]);
       delay(0); m_button3.update(b[7]);
@@ -176,7 +179,7 @@ class DisplayKeyboard {
       m_matrix.draw();
     }
 
-    void update(const int *current_matrix, const int32_t *a, const bool *b) {
+    void update(const uint8_t *current_matrix, const int32_t *a, const bool *b) {
       // Serial.println("update Keyboard");
       delay(0); m_joy1.update(a[2], -a[3], 0);
       delay(0); m_button1.update(b[14]);
@@ -193,19 +196,12 @@ class DisplayKeyboard {
       m_display->setDrawColor(b[11] ? 0 : 1); m_display->drawStr(0, 64, "Alt");
       delay(0); m_display->updateDisplayArea(0, 1, 3, 7);
       
-      // Determine current matrixf
-      uint8_t n = 0;
-      if(abs(*current_matrix) % 3 == 1) n = 1;
-      else if(abs(*current_matrix) % 3 == 2) n = 2;
-      else n = 0;
-      // Serial.print(a[9]); Serial.print(" : "); Serial.println(n);   
-
       // Caculate joystick position on keyMatrix
       int8_t key_x = static_cast<int8_t>( a[0] * (k_keyCols - 1) * 8 / 2 / 32767);  // characters are 8 pixels wide
       int8_t key_y = static_cast<int8_t>(-a[1] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are 8 pixels tall
       uint8_t key_i = (key_y + (k_keyRows) * 8 / 2 ) / 8;
       uint8_t key_j = (key_x + (k_keyCols) * 8 / 2 ) / 8;
-      delay(0); m_matrix.update(n, key_i, key_j);
+      delay(0); m_matrix.update(*current_matrix, key_i, key_j);
     }
 };
 
@@ -261,7 +257,7 @@ class Display{
       }
     }
 
-    void update(const int *current_matrix, const int32_t *a, const bool *b) {
+    void update(const uint8_t *current_matrix, const int32_t *a, const bool *b) {
       if (display_mode == 2) {
         m_displayKeyboard.update(current_matrix, a, b);
       } else if (display_mode == 1) {

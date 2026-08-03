@@ -1,3 +1,4 @@
+// Used to pass mouse data between tasks
 struct mouse_report
 {
   int8_t x = 0;

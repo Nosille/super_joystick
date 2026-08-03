@@ -1,7 +1,8 @@
 // Keyboard character list
 uint8_t const k_keyRows = 6;
 uint8_t const k_keyCols = 8;
-char const k_keyMatrix_L1[k_keyRows][k_keyCols] = {
+char const k_keyMatrix[][k_keyRows][k_keyCols] = {
+{
   // bksp       lf   cr  pg_u  tab      del  
     {0x08, ' ',0x0A,0x0D,0x05,0x09, ' ',0x7F},
     { '1', '2', '3', '4', '5', '6', '7', '8'},
@@ -10,8 +11,8 @@ char const k_keyMatrix_L1[k_keyRows][k_keyCols] = {
     { 'o', 'p', 'q', 'r', 's', 't', 'u', 'v'},
     { 'w', 'x', 'y', 'z',0x06, '.', ',', ' '}
   //                     pg_d  
-};
-char const k_keyMatrix_L2[k_keyRows][k_keyCols] = {
+},
+{
   // undo                ^home          redo
     {0x0B, ' ', ' ', ' ',0x01, ' ', ' ',0x0C},
     { '!', '@', '#', '$', '%', '^', '&', '*'},
@@ -20,8 +21,8 @@ char const k_keyMatrix_L2[k_keyRows][k_keyCols] = {
     { 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'},
     { 'W', 'X', 'Y', 'Z',0x04, '<', '>', '_'}
   //                     ^end    
-};
-char const k_keyMatrix_L3[k_keyRows][k_keyCols] = {
+},
+{
   //  F1   F2   F3   F4   F5   F6   F7   F8 
   //  F9  F10  F11  F12 
     {0x11,0X12,0X13,0X14,0X15,0X16,0X17,0X18},    
@@ -31,7 +32,9 @@ char const k_keyMatrix_L3[k_keyRows][k_keyCols] = {
     { ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
     {0x0B,0x01,0x04,0x07,0x06,0x0E,0x0F,0x0C}
   // Undo Top Bottom ps  pg_d pausebreak Redo    
+},
 };
+static const uint8_t k_numMatrices = sizeof(k_keyMatrix) / sizeof(k_keyMatrix[0]);
 
 
 /*--------------------------------------------------------------------

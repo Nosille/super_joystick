@@ -14,22 +14,10 @@
 #include <utility/imumaths.h>
 
 #include "config_input.h"
+#include "config_report.h"
 #include "config_display.h"
 
-#include "hid_mouse_description.h"
-#include "hid_joystick_description.h"
-#include "hid_keyboard_description.h"
-
 #define QUEUE_SIZE 1
-
-// I2C_ADDR's
-#define SH1107_ADDR    0x3C // Address 0x3C default
-
-// Report ID's
-#define MOUSE_ID      0X01
-#define KEYBOARD_ID   0X02
-#define JOYSTICK1_ID  0X03
-#define JOYSTICK2_ID  0X04
 
 // Handles
 TaskHandle_t taskInputsHandle = NULL;
@@ -489,7 +477,7 @@ void taskDisplay(void* parameter) {
   uint8_t display_mode = 0;
   unsigned long last_display = millis();
 
-  int current_matrix = 0;
+  uint8_t current_matrix = 0;
   const unsigned long kMatrixDebounceMs = 200;
   bool last_matrix_inc = false;
   bool last_matrix_dec = false;
@@ -602,7 +590,11 @@ void taskDisplay(void* parameter) {
         last_matrix_change_ms = now;
         // Serial.print("current_matrix: "); Serial.println(current_matrix);
       }
-
+      if (current_matrix < 0) {
+        current_matrix = k_numMatrices - 1;
+      } else if (current_matrix >= k_numMatrices) {
+        current_matrix = 0;
+      }
       last_matrix_inc = matrix_inc_pressed;
       last_matrix_dec = matrix_dec_pressed;
     }
@@ -711,171 +703,130 @@ void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
   setLeds();
 }
 
-void updateHidReports(const int32_t* a, const bool* b, const bool mode, const int& current_matrix,
+void updateHidReports(const int32_t* a, const bool* b, const bool mode, const uint8_t& current_matrix,
               mouse_report& mouse, keyboard_report& keyboard,
               joystick_report& joystick1, joystick_report& joystick2) {
   // Update active report
   // Keyboard Mode
   if (mode) {
-    // populate pending mousedata
+    // populate pending mouse data
     {
-      int8_t mx =  static_cast<int8_t>(a[2] / 4096);
-      int8_t my = -static_cast<int8_t>(a[3] / 4096);
-      int8_t mh =  static_cast<int8_t>(a[4] / 8192);
-      int8_t mv =  static_cast<int8_t>(a[5] / 8192);
+      // mouse axes
+      int8_t mx =  static_cast<int8_t>(a[mouse_axes[0][0]] / mouse_axes[0][1]);
+      int8_t my = -static_cast<int8_t>(a[mouse_axes[1][0]] / mouse_axes[1][1]);
+      int8_t mh =  static_cast<int8_t>(a[mouse_axes[2][0]] / mouse_axes[2][1]);
+      int8_t mv =  static_cast<int8_t>(a[mouse_axes[3][0]] / mouse_axes[3][1]);
 
-      if (mx < -127) mx = -127;
-      if (mx > 127) mx = 127;
-      if (my < -127) my = -127;
-      if (my > 127) my = 127;
-      if (mh < -127) mh = -127;
-      if (mh > 127) mh = 127;
-      if (mv < -127) mv = -127;
-      if (mv > 127) mv = 127;
+      if (mx < mouse_axes[0][2]) mx = mouse_axes[0][2];
+      if (mx > mouse_axes[0][3]) mx = mouse_axes[0][3];
+      if (my < mouse_axes[1][2]) my = mouse_axes[1][2];
+      if (my > mouse_axes[1][3]) my = mouse_axes[1][3];
+      if (mh < mouse_axes[2][2]) mh = mouse_axes[2][2];
+      if (mh > mouse_axes[2][3]) mh = mouse_axes[2][3];
+      if (mv < mouse_axes[3][2]) mv = mouse_axes[3][2];
+      if (mv > mouse_axes[3][3]) mv = mouse_axes[3][3];
 
       mouse.x = mx;
       mouse.y = my;
       mouse.h = mh;
       mouse.v = mv;
-      mouse.buttons = (b[14] << 0)
-                    | (b[13] << 1)
-                    | (b[16] << 2)
-                  // | ( b[21]       << 3)
-                  // | ( b[22]       << 4)
-                    ;
+
+      // mouse buttons
+      mouse.buttons = 0;
+      for(int i = 0; i < std::min(mouse_buttons_size, (uint8_t)5); i++) {
+        if(mouse_buttons[i] >= 0) {
+          mouse.buttons |=  b[mouse_buttons[i]] << i;
+        }
+      }
       mouse.needs_send = true;
     }
 
-    char const (*matrix)[k_keyCols];
-    if (current_matrix % 3 == 1) {
-      matrix = k_keyMatrix_L2;
-    } else if (current_matrix % 3 == 2) {
-      matrix = k_keyMatrix_L3;
-    } else {
-      matrix = k_keyMatrix_L1;
-    }
-
     // populate pending keyboard data
-    // Calculate joystick position on keyMatrix
-    int8_t key_x = static_cast<int8_t>(a[0] * (k_keyCols - 1) * 8 / 2 / 32767);   // characters are on an 8x8 pixel grid
-    int8_t key_y = static_cast<int8_t>(-a[1] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are on an 8x8 pixel grid
-    uint8_t key_i = (key_y + (k_keyRows)*8 / 2) / 8;
-    uint8_t key_j = (key_x + (k_keyCols)*8 / 2) / 8;
+    {
+      // Get keymatrix
+      char const (*matrix)[k_keyCols];
+      matrix = k_keyMatrix[current_matrix];
 
-    uint8_t modifier = 0;
-    std::vector<uint8_t> keys;
-    keys.reserve(6);  // Reserve space for up to 6 keys
+      // Calculate joystick position on keyMatrix
+      int8_t key_x = static_cast<int8_t>( a[keyboard_axes[0][0]] * (k_keyCols - 1) * 8 / 2 / 32767);   // characters are on an 8x8 pixel grid
+      int8_t key_y = static_cast<int8_t>(-a[keyboard_axes[1][0]] * (k_keyRows - 1) * 8 / 2 / 32767);  // characters are on an 8x8 pixel grid
+      uint8_t key_i = (key_y + (k_keyRows)*8 / 2) / 8;
+      uint8_t key_j = (key_x + (k_keyCols)*8 / 2) / 8;
 
-    // Capture matrix key if button pressed
-    if (b[12]) {
-      modifier = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
-      keys.push_back(k_ascii2hid[(uint8_t)matrix[key_i][key_j]][1]);
-    }
+      uint8_t modifier = 0;
+      std::vector<uint8_t> keys;
+      keys.reserve(6);  // Reserve space for up to 6 keys
 
-    // direct button keys
-    if (b[9]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_SHIFT_LEFT);
-    }
-    if (b[10]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_CONTROL_LEFT);
-    }
-    if (b[11]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_ALT_LEFT);
-    }
-    if (b[5]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_HOME);
-    }
-    if (b[6]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_ESCAPE);
-    }
-    if (b[7]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_END);
-    }
-    if (b[8]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_ENTER);
-    }
-    if (b[15]) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_GUI_LEFT);
-    }
-    if (a[7] > 15000) {
-      Serial.print("arrow up: ");Serial.println(keys.size());
-      if (keys.size() < 6) keys.push_back(HID_KEY_ARROW_UP);
-    } else if (a[6] > 15000) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_ARROW_RIGHT);
-    } else if (a[7] < -15000) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_ARROW_DOWN);
-    } else if (a[6] < -15000) {
-      if (keys.size() < 6) keys.push_back(HID_KEY_ARROW_LEFT);
-    }
-
-    // reset keyboard report
-    keyboard.modifier = 0;
-    for (auto& key : keyboard.keys) {
-      key = 0;
-    }
-    // update report with new keys
-    if (keys.size() > 0) {
-      keyboard.modifier = modifier;
-      for (size_t i = 0; i < keys.size(); i++) {
-        keyboard.keys[i] = keys[i];
+      // Capture matrix key if button pressed
+      if (b[keyboard_buttons[0][0]]) {
+        modifier = k_ascii2hid[(uint8_t)matrix[key_i][key_j]][0];
+        keys.push_back(k_ascii2hid[(uint8_t)matrix[key_i][key_j]][1]);
       }
-      keyboard.needs_send = true;
+
+      // direct axis to keys
+      for(int i = 2; i < keyboard_axes_size; i++) {
+        if (a[keyboard_axes[i][0]] < keyboard_axes[i][1]) {
+          if (keys.size() < 6) keys.push_back(keyboard_axes[i][2]);
+        } else if (a[keyboard_axes[i][0]] > keyboard_axes[i][3]) {
+          if (keys.size() < 6) keys.push_back(keyboard_axes[i][4]);
+        }
+      }
+
+      // direct button to keys
+      for(int i = 1; i < keyboard_buttons_size; i++) {
+        if (b[keyboard_buttons[i][0]]) {
+          if (keys.size() < 6) keys.push_back(keyboard_buttons[i][1]);
+        }
+      }
+
+      // reset keyboard report
+      keyboard.modifier = 0;
+      for (auto& key : keyboard.keys) {
+        key = 0;
+      }
+      // update report with new keys
+      if (keys.size() > 0) {
+        keyboard.modifier = modifier;
+        for (size_t i = 0; i < keys.size(); i++) {
+          keyboard.keys[i] = keys[i];
+        }
+        keyboard.needs_send = true;
+      }
     }
 
-    // Joystick mode
+  // Joystick mode
   } else {
     // Store joystick1 data for later sending via callback
-    joystick1.joystick.x      =  static_cast<int16_t>(a[0]);
-    joystick1.joystick.y      = -static_cast<int16_t>(a[1]);
-    joystick1.joystick.z      =  static_cast<int16_t>(a[2]);
-    joystick1.joystick.rx     = -static_cast<int16_t>(a[3]);
-    joystick1.joystick.ry     =  static_cast<int16_t>(a[4]);
-    joystick1.joystick.rz     = -static_cast<int16_t>(a[5]);
-    joystick1.joystick.slider =  static_cast<int16_t>(a[6]);
-    joystick1.joystick.dial   = -static_cast<int16_t>(a[7]);
-    joystick1.joystick.wheel  =  static_cast<int16_t>(a[8]);
-    joystick1.joystick.buttons  = ( b[0] << 0)
-                                | ( b[1] << 1)
-                                | ( b[2] << 2)
-                                | ( b[3] << 3)
-                                | ( b[4] << 4)
-                                | ( b[5] << 5)
-                                | ( b[6] << 6)
-                                | ( b[7] << 7)
-                                | ( b[8] << 8)
-                                | ( b[9] << 9)
-                                | ( b[10] << 10)
-                                | ( b[11] << 11)
-                                | ( b[12] << 12)
-                                | ( b[13] << 13)
-                                | ( b[14] << 14)
-                                | ( b[15] << 15)
-                                | ( b[16] << 16)
-                                | ( b[17] << 17)
-                                | ( b[18] << 18)
-                                | ( b[19] << 19)
-                                | ( b[20] << 20)
-                                | ( b[21] << 21)
-                                | ( b[22] << 22)
-                                | ( b[23] << 23)
-                                | ( b[24] << 24)                                
-                                ;
+    joystick1.joystick.x      =  static_cast<int16_t>(a[joystick_axes[0][0]]);
+    joystick1.joystick.y      =  static_cast<int16_t>(a[joystick_axes[1][0]]);
+    joystick1.joystick.z      =  static_cast<int16_t>(a[joystick_axes[2][0]]);
+    joystick1.joystick.rx     =  static_cast<int16_t>(a[joystick_axes[3][0]]);
+    joystick1.joystick.ry     =  static_cast<int16_t>(a[joystick_axes[4][0]]);
+    joystick1.joystick.rz     =  static_cast<int16_t>(a[joystick_axes[5][0]]);
+    joystick1.joystick.slider =  static_cast<int16_t>(a[joystick_axes[6][0]]);
+    joystick1.joystick.dial   =  static_cast<int16_t>(a[joystick_axes[7][0]]);
+    joystick1.joystick.wheel  =  static_cast<int16_t>(a[joystick_axes[8][0]]);
+    joystick1.joystick.buttons = 0;
+    for(int i = 0; i < std::min(joystick_buttons_size, (uint8_t)32); i++) {
+      if(joystick_buttons[i][0] >= 0) joystick1.joystick.buttons |=  (b[joystick_buttons[i][0]] << i);
+    }
     // Flag joystick1 for pending send
     joystick1.needs_send = true;
 
     // Store joystick2 data for later sending via callback
-    joystick2.joystick.x      =  static_cast<int16_t>(a[11]);
-    joystick2.joystick.y      =  static_cast<int16_t>(a[12]);
-    joystick2.joystick.z      =  static_cast<int16_t>(a[13]);
-    joystick2.joystick.rx     =  static_cast<int16_t>(a[14]);
-    joystick2.joystick.ry     =  static_cast<int16_t>(a[15]);
-    joystick2.joystick.rz     =  static_cast<int16_t>(a[16]);
-    joystick2.joystick.slider =  static_cast<int16_t>(a[9]);
-    joystick2.joystick.dial   =  static_cast<int16_t>(a[10]);
-    joystick2.joystick.wheel  =  0;
-    joystick2.joystick.buttons  = ( b[21] << 0)
-                                | ( b[22] << 1)
-                                ;
+    joystick2.joystick.x      =  static_cast<int16_t>(a[joystick_axes[0][1]]);
+    joystick2.joystick.y      =  static_cast<int16_t>(a[joystick_axes[1][1]]);
+    joystick2.joystick.z      =  static_cast<int16_t>(a[joystick_axes[2][1]]);
+    joystick2.joystick.rx     =  static_cast<int16_t>(a[joystick_axes[3][1]]);
+    joystick2.joystick.ry     =  static_cast<int16_t>(a[joystick_axes[4][1]]);
+    joystick2.joystick.rz     =  static_cast<int16_t>(a[joystick_axes[5][1]]);
+    joystick2.joystick.slider =  static_cast<int16_t>(a[joystick_axes[6][1]]);
+    joystick2.joystick.dial   =  static_cast<int16_t>(a[joystick_axes[7][1]]);
+    joystick2.joystick.wheel  =  static_cast<int16_t>(a[joystick_axes[8][1]]);
+    joystick2.joystick.buttons = 0;
+    for(int i = 0; i < std::min(joystick_buttons_size, (uint8_t)32); i++) {
+      if(joystick_buttons[i][1] >= 0) joystick2.joystick.buttons |= (b[joystick_buttons[i][1]] << i);
+    }
     // Flag that joystick2 needs to be sent
     joystick2.needs_send = true;  
   }
