@@ -32,8 +32,7 @@ QueueHandle_t queueMode = NULL;
 QueueHandle_t queueMatrix = NULL;
 QueueHandle_t queueMouse = NULL;
 QueueHandle_t queueKeyboard = NULL;
-QueueHandle_t queueJoystick1 = NULL;
-QueueHandle_t queueJoystick2 = NULL;
+QueueHandle_t queueJoysticks = NULL;
 
 // Global variables
 int8_t leds_values[led_size] = { 32 };  // current brightness of leds, 0 to 255
@@ -299,13 +298,11 @@ void taskReportHid(void* parameter) {
   // Report
   mouse_report mouse;
   keyboard_report keyboard;
-  joystick_report joystick1;
-  joystick_report joystick2;
+  joystick_report joysticks[joystick_reports_size];
 
   xQueueOverwrite(queueMouse, &mouse);
   xQueueOverwrite(queueKeyboard, &keyboard);
-  xQueueOverwrite(queueJoystick1, &joystick1);
-  xQueueOverwrite(queueJoystick2, &joystick2);  
+  xQueueOverwrite(queueJoysticks, &joysticks);
 
   unsigned long last_report = millis();
   
@@ -338,14 +335,13 @@ void taskReportHid(void* parameter) {
     }
 
     // Update HID reports
-    updateHidReports(a, b, mode, current_matrix, mouse, keyboard, joystick1, joystick2);
+    updateHidReports(a, b, mode, current_matrix, mouse, keyboard, joysticks);
 
     if(mode == 2) {
       xQueueOverwrite(queueMouse, &mouse);
       xQueueOverwrite(queueKeyboard, &keyboard);
     } else {
-      xQueueOverwrite(queueJoystick1, &joystick1);
-      xQueueOverwrite(queueJoystick2, &joystick2);
+      xQueueOverwrite(queueJoysticks, &joysticks);
     }
 
     // UBaseType_t stack_high_water_mark = uxTaskGetStackHighWaterMark(NULL);
@@ -361,13 +357,6 @@ void taskReportHid(void* parameter) {
 }
 
 void taskSendHid(void* parameter) {
-  // HID report descriptor
-  uint8_t const desc_hid_report[] = {
-      MY_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(MOUSE_ID)),
-      MY_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(KEYBOARD_ID)),
-      MY_HID_REPORT_DESC_JOYSTICK(HID_REPORT_ID(JOYSTICK1_ID)),
-      MY_HID_REPORT_DESC_JOYSTICK(HID_REPORT_ID(JOYSTICK2_ID))
-  };
 
   // Set up HID
   Adafruit_USBD_HID usb_hid;
@@ -408,17 +397,13 @@ void taskSendHid(void* parameter) {
     }
 
     // get joystick
-    joystick_report joystick1;
-    if (!xQueuePeek(queueJoystick1, &joystick1, pdMS_TO_TICKS(1))) {
-      Serial.println("Failed to get Joystick1 from queue.");
-    }
-    joystick_report joystick2;
-    if (!xQueuePeek(queueJoystick2, &joystick2, pdMS_TO_TICKS(1))) {
-      Serial.println("Failed to get Joystick2 from queue.");
+    joystick_report joysticks[joystick_reports_size];
+    if (!xQueuePeek(queueJoysticks, &joysticks, pdMS_TO_TICKS(1))) {
+      Serial.println("Failed to get Joysticks from queue.");
     }
 
     // Remote wakeup
-    if (TinyUSBDevice.suspended() && joystick1.joystick.buttons) {
+    if (TinyUSBDevice.suspended() && joysticks[0].joystick.buttons) {
       // Wake up host if we are in suspend mode
       // and REMOTE_WAKEUP feature is enabled by host
       TinyUSBDevice.remoteWakeup();
@@ -428,16 +413,12 @@ void taskSendHid(void* parameter) {
     //   Serial.println("hid not ready!");
     // }
 
-    if (joystick1.needs_send && usb_hid.ready()) {
-      usb_hid.sendReport(JOYSTICK1_ID, &joystick1.joystick, sizeof(joystick1.joystick));
-      joystick1.needs_send = false;
-      xQueueOverwrite(queueJoystick1, &joystick1);
-    }
-
-    if (joystick2.needs_send && usb_hid.ready()) {
-      usb_hid.sendReport(JOYSTICK2_ID, &joystick2.joystick, sizeof(joystick2.joystick));
-      joystick2.needs_send = false;
-      xQueueOverwrite(queueJoystick2, &joystick2);
+    for(size_t i = 0; i < joystick_reports_size; i++) {
+      if (joysticks[i].needs_send && usb_hid.ready()) {
+        usb_hid.sendReport(joystick_ids[i], &joysticks[i].joystick, sizeof(joysticks[i].joystick));
+        joysticks[i].needs_send = false;
+        xQueueOverwrite(queueJoysticks, &joysticks);
+      }
     }
 
     if (mouse.needs_send && usb_hid.ready()) {
@@ -544,33 +525,21 @@ void taskDisplay(void* parameter) {
       delay(100);
       if (display_installed) display.switchMode(display_mode);
 
-      joystick_report joystick1;
-      joystick1.joystick.x = 0.0;
-      joystick1.joystick.y = 0.0;
-      joystick1.joystick.z = 0.0;
-      joystick1.joystick.rx = 0.0;
-      joystick1.joystick.ry = 0.0;
-      joystick1.joystick.rz = 0.0;
-      joystick1.joystick.slider = 0.0;
-      joystick1.joystick.dial = 0.0;
-      joystick1.joystick.wheel = 0.0;
-      joystick1.joystick.buttons = 0;
-      joystick1.needs_send = true;
-      xQueueOverwrite(queueJoystick1, &joystick1);
-
-      joystick_report joystick2;
-      joystick2.joystick.x = 0.0;
-      joystick2.joystick.y = 0.0;
-      joystick2.joystick.z = 0.0;
-      joystick2.joystick.rx = 0.0;
-      joystick2.joystick.ry = 0.0;
-      joystick2.joystick.rz = 0.0;
-      joystick2.joystick.slider = 0.0;
-      joystick2.joystick.dial = 0.0;
-      joystick2.joystick.wheel = 0.0;
-      joystick2.joystick.buttons = 0;
-      joystick2.needs_send = true;
-      xQueueOverwrite(queueJoystick2, &joystick2);
+      joystick_report joysticks[joystick_reports_size];
+      for(size_t i = 0; i < joystick_reports_size; i++) {
+        joysticks[i].joystick.x = 0.0;
+        joysticks[i].joystick.y = 0.0;
+        joysticks[i].joystick.z = 0.0;
+        joysticks[i].joystick.rx = 0.0;
+        joysticks[i].joystick.ry = 0.0;
+        joysticks[i].joystick.rz = 0.0;
+        joysticks[i].joystick.slider = 0.0;
+        joysticks[i].joystick.dial = 0.0;
+        joysticks[i].joystick.wheel = 0.0;
+        joysticks[i].joystick.buttons = 0;
+        joysticks[i].needs_send = true;
+      }
+      xQueueOverwrite(queueJoysticks, &joysticks);
       delay(400);
     }
 
@@ -650,16 +619,7 @@ uint16_t get_report_callback(uint8_t report_id, hid_report_type_t report_type, u
   (void)reqlen;
 
   // Populate the buffer with led data
-  if (report_id == JOYSTICK1_ID) {
-    if (report_type == HID_REPORT_TYPE_FEATURE) {
-      buffer[0] = report_id;
-      for (uint8_t i = 0; i < led_size; ++i) {
-        buffer[1 + i] = leds_values[i];
-      }
-      return 1 + led_size * sizeof(leds_values[0]);  // Return the number of bytes written
-    }
-  }
-  if (report_id == JOYSTICK2_ID) {
+  if (report_id == joystick_ids[0]) {
     if (report_type == HID_REPORT_TYPE_FEATURE) {
       buffer[0] = report_id;
       for (uint8_t i = 0; i < led_size; ++i) {
@@ -678,18 +638,7 @@ void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
   (void)report_id;
 
   // Check if it is the correct report and if SDL sent output data
-  if (report_id == JOYSTICK1_ID) {
-    if (report_type == HID_REPORT_TYPE_OUTPUT) {
-      // Buffer contains the LED/Rumble data from SDL
-      for (uint8_t i = 0; i < led_size; ++i) {
-        if (bufsize > i) {
-          leds_values[i] = buffer[i];
-        }
-      }
-    }
-  }
-
-  if (report_id == JOYSTICK2_ID) {
+  if (report_id == joystick_ids[0]) {
     if (report_type == HID_REPORT_TYPE_OUTPUT) {
       // Buffer contains the LED/Rumble data from SDL
       for (uint8_t i = 0; i < led_size; ++i) {
@@ -705,7 +654,7 @@ void set_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
 
 void updateHidReports(const int32_t* a, const bool* b, const bool mode, const uint8_t& current_matrix,
               mouse_report& mouse, keyboard_report& keyboard,
-              joystick_report& joystick1, joystick_report& joystick2) {
+              joystick_report* joysticks) {
   // Update active report
   // Keyboard Mode
   if (mode) {
@@ -797,38 +746,23 @@ void updateHidReports(const int32_t* a, const bool* b, const bool mode, const ui
   // Joystick mode
   } else {
     // Store joystick1 data for later sending via callback
-    joystick1.joystick.x      =  static_cast<int16_t>(a[joystick_axes[0][0]]);
-    joystick1.joystick.y      =  static_cast<int16_t>(a[joystick_axes[1][0]]);
-    joystick1.joystick.z      =  static_cast<int16_t>(a[joystick_axes[2][0]]);
-    joystick1.joystick.rx     =  static_cast<int16_t>(a[joystick_axes[3][0]]);
-    joystick1.joystick.ry     =  static_cast<int16_t>(a[joystick_axes[4][0]]);
-    joystick1.joystick.rz     =  static_cast<int16_t>(a[joystick_axes[5][0]]);
-    joystick1.joystick.slider =  static_cast<int16_t>(a[joystick_axes[6][0]]);
-    joystick1.joystick.dial   =  static_cast<int16_t>(a[joystick_axes[7][0]]);
-    joystick1.joystick.wheel  =  static_cast<int16_t>(a[joystick_axes[8][0]]);
-    joystick1.joystick.buttons = 0;
-    for(int i = 0; i < std::min(joystick_buttons_size, (uint8_t)32); i++) {
-      if(joystick_buttons[i][0] >= 0) joystick1.joystick.buttons |=  (b[joystick_buttons[i][0]] << i);
+    for(size_t i = 0; i < joystick_reports_size; i++) {
+      joysticks[i].joystick.x      =  static_cast<int16_t>(a[joystick_axes[0][i]]);
+      joysticks[i].joystick.y      =  static_cast<int16_t>(a[joystick_axes[1][i]]);
+      joysticks[i].joystick.z      =  static_cast<int16_t>(a[joystick_axes[2][i]]);
+      joysticks[i].joystick.rx     =  static_cast<int16_t>(a[joystick_axes[3][i]]);
+      joysticks[i].joystick.ry     =  static_cast<int16_t>(a[joystick_axes[4][i]]);
+      joysticks[i].joystick.rz     =  static_cast<int16_t>(a[joystick_axes[5][i]]);
+      joysticks[i].joystick.slider =  static_cast<int16_t>(a[joystick_axes[6][i]]);
+      joysticks[i].joystick.dial   =  static_cast<int16_t>(a[joystick_axes[7][i]]);
+      joysticks[i].joystick.wheel  =  static_cast<int16_t>(a[joystick_axes[8][i]]);
+      joysticks[i].joystick.buttons = 0;
+      for(int j = 0; j < std::min(joystick_buttons_size, (uint8_t)32); j++) {
+        if(joystick_buttons[j][i] >= 0) joysticks[i].joystick.buttons |=  (b[joystick_buttons[j][i]] << j);
+      }
+      // Flag joystick1 for pending send
+      joysticks[i].needs_send = true;
     }
-    // Flag joystick1 for pending send
-    joystick1.needs_send = true;
-
-    // Store joystick2 data for later sending via callback
-    joystick2.joystick.x      =  static_cast<int16_t>(a[joystick_axes[0][1]]);
-    joystick2.joystick.y      =  static_cast<int16_t>(a[joystick_axes[1][1]]);
-    joystick2.joystick.z      =  static_cast<int16_t>(a[joystick_axes[2][1]]);
-    joystick2.joystick.rx     =  static_cast<int16_t>(a[joystick_axes[3][1]]);
-    joystick2.joystick.ry     =  static_cast<int16_t>(a[joystick_axes[4][1]]);
-    joystick2.joystick.rz     =  static_cast<int16_t>(a[joystick_axes[5][1]]);
-    joystick2.joystick.slider =  static_cast<int16_t>(a[joystick_axes[6][1]]);
-    joystick2.joystick.dial   =  static_cast<int16_t>(a[joystick_axes[7][1]]);
-    joystick2.joystick.wheel  =  static_cast<int16_t>(a[joystick_axes[8][1]]);
-    joystick2.joystick.buttons = 0;
-    for(int i = 0; i < std::min(joystick_buttons_size, (uint8_t)32); i++) {
-      if(joystick_buttons[i][1] >= 0) joystick2.joystick.buttons |= (b[joystick_buttons[i][1]] << i);
-    }
-    // Flag that joystick2 needs to be sent
-    joystick2.needs_send = true;  
   }
 }
 
@@ -897,15 +831,9 @@ void setup() {
     while (1);
   }
 
-  queueJoystick1 = xQueueCreate(QUEUE_SIZE, sizeof(joystick_report));
-  if (queueJoystick1 == NULL) {
-    Serial.println("Failed to create joystick1 queue!");
-    while (1);
-  }
-
-  queueJoystick2 = xQueueCreate(QUEUE_SIZE, sizeof(joystick_report));
-  if (queueJoystick2 == NULL) {
-    Serial.println("Failed to create joystick2 queue!");
+  queueJoysticks = xQueueCreate(QUEUE_SIZE, sizeof(joystick_report)*joystick_reports_size);
+  if (queueJoysticks == NULL) {
+    Serial.println("Failed to create joystick queue!");
     while (1);
   }
 

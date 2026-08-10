@@ -5,11 +5,18 @@
 // Report ID's
 #define MOUSE_ID      0X01
 #define KEYBOARD_ID   0X02
-#define JOYSTICK1_ID  0X03
-#define JOYSTICK2_ID  0X04
+static const int16_t joystick_ids[2] = {0x03, 0x04};
+
+// HID report descriptor
+uint8_t const desc_hid_report[] = {
+    MY_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(MOUSE_ID)),
+    MY_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(KEYBOARD_ID)),
+    MY_HID_REPORT_DESC_JOYSTICK(HID_REPORT_ID(joystick_ids[0])),
+    MY_HID_REPORT_DESC_JOYSTICK(HID_REPORT_ID(joystick_ids[1])),
+};
 
 // Axis index for each value in the joystick reports
-static const int16_t joystick_reports_size = 2;
+static const int16_t joystick_reports_size = sizeof(joystick_ids) / sizeof(joystick_ids[0]);
 static const int16_t joystick_axes[][joystick_reports_size] = 
 { // joystick1  joystick2
     { 0,         11},   // 0

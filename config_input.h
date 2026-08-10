@@ -1,10 +1,10 @@
 // Source List
 enum class Source : int16_t {
-    Local=0,        // 0
-    MCP3208,        // 1
-    Ada1616,        // 2
-    Encoder,        // 3    
-    BNO055,         // 4
+    Local=0,        // 0  Directly attached to esp32 pins
+    MCP3208,        // 1  Attached to MCP3208 using spi
+    Ada1616,        // 2  Attached to Adafruit 1616 using i2c
+    Encoder,        // 3  Attached to Adafruit encoder using i2c
+    BNO055,         // 4  Data from a BNO055 imu
     Count
 };
 static const int16_t devices[][3] = 
@@ -44,8 +44,8 @@ static const uint8_t axes_size = sizeof(axes) / sizeof(axes[0]);
 
 // type List
 enum class ButtonType : int16_t {
-    Digital=0, // 0
-    Touch,     // 1
+    Digital=0, // 0  Regular digital pin
+    Touch,     // 1  Touch pin
     Count
 };
 
